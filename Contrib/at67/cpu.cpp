@@ -489,13 +489,18 @@ namespace Cpu
             {
                 // Patches SYS_Exec_88 loader to accept page0 segments as the first segment and works with 64KB SRAM hardware
                 patchSYS_Exec_88();
-
                 saveScanlineModes();
                 setRAM(VIDEO_MODE_D, 0xF3);
                 _scanlineMode = ScanlineMode::Normal;
             }
             break;
 
+            default:
+            {
+                // Cpu::shutdown();
+                fprintf(stderr, "Cpu::setRomType() : Unknown EPROM Type = 0x%02x\n", romType);
+                // _EXIT_(EXIT_FAILURE);
+            }
             case ROMv2: 
             case ROMv3: 
             case ROMv4:
@@ -506,14 +511,6 @@ namespace Cpu
                 setRAM(VIDEO_MODE_D, 0xEC);
                 setRAM(VIDEO_MODE_B, 0x0A);
                 setRAM(VIDEO_MODE_C, 0x0A);
-            }
-            break;
-
-            default:
-            {
-                Cpu::shutdown();
-                fprintf(stderr, "Cpu::setRomType() : Unknown EPROM Type = 0x%02x : exiting...\n", romType);
-                _EXIT_(EXIT_FAILURE);
             }
             break;
         }
