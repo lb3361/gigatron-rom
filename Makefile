@@ -34,27 +34,25 @@ CFLAGS:=-std=c11 -O3 -Wall
 # Development towards "ROM v5"
 dev.rom: Core/* Apps/*/* Makefile interface.json
 	python3 Core/dev.asm.py\
-		packedPictures=Apps/Pictures/packedPictures.rgb\
 		Snake=Apps/Snake/Snake_v3.gcl\
 		SYS_Racer_v1.py\
 		zippedRacerHorizon=Apps/Racer/Horizon-256x16.rgb\
 		Racer=Apps/Racer/Racer.gcl\
 		Mandelbrot=Apps/Mandelbrot/Mandelbrot.gcl\
 		SYS_Loader_vX.py\
-		Pictures=Apps/Pictures/Pictures_v3.gcl\
-		Tetronis=Apps/Tetronis/Tetronis_v2.gt1\
+		Loader=Apps/Loader/Loader_v4.gcl\
 		Bricks=Apps/Bricks/Bricks_v2.gt1\
+		Invader=Apps/Invader/Invader.gt1\
 		TinyBASIC=Apps/TinyBASIC/TinyBASIC.gcl\
 		TicTac=Apps/TicTac/LoadTicTac_v1.gcl\
 		TicTacGtb=Apps/TicTac/TicTac_v2.gtb\
 		WozMon=Apps/WozMon/WozMon_v2.gcl\
 		Apple1=Apps/Apple-1/Apple-1.gt1\
 		MSBASIC=Apps/MSBASIC/MSBASIC_v1.gt1\
-		Loader=Apps/Loader/Loader_v4.gcl\
 		Credits=Apps/Credits/Credits_v3.gcl\
 		Egg=Apps/Horizon/Horizon_dev_c.gt1\
 		Boot=Apps/CardBoot/CardBoot.gt1\
-		Main=Apps/MainMenu/MainMenu_v5.gcl\
+		Main=Apps/MainMenu/MainMenu.gcl\
 		Reset=Core/Reset.gcl
 
 run: Docs/gtemu $(DEV)
