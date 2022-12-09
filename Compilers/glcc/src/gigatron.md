@@ -1,4 +1,4 @@
-# /* 
+# /*
 %{
 
 /*
@@ -54,8 +54,8 @@ static void defstring(int, char *);
 static void defsymbol(Symbol);
 static void doarg(Node);
 static void emit2(/* Node */) {}
-static void emit3(const char*, Node, Node*, short*);
-static void myemitfmt(const char*, Node, Node*, short*);
+static void emit3(const char*, int, Node, int, Node*, short*);
+static void emitfmt1(const char*, Node, int, Node*, short*);
 static void export(Symbol);
 static void clobber(Node);
 static void preralloc(Node);
@@ -85,6 +85,7 @@ static void xprint_finish(void);
 /* Cost functions */
 static int  if_zpconst(Node);
 static int  if_zpglobal(Node);
+static int  if_incr(Node,int,int);
 static int  if_rmw(Node,int);
 static int  if_not_asgn_tmp(Node,int);
 static int  if_cv_from(Node,int,int);
@@ -109,6 +110,12 @@ static int codenum = 0;
 static int cseg = 0;
 static int cpu = 5;
 
+/* Clobber and ac tracking */
+static int vac_clobbered;
+static int xac_clobbered;
+static Symbol vac_constval;
+static unsigned vac_equiv, lac_equiv, fac_equiv;
+
 
 /*---- END HEADER --*/
 %}
@@ -117,7 +124,7 @@ static int cpu = 5;
 %start stmt
 
 # From ./ops c=1 s=2 i=2 l=4 h=4 f=5 d=5 x=5 p=2
-   
+
 %term CNSTF5=5137
 %term CNSTI1=1045 CNSTI2=2069 CNSTI4=4117
 %term CNSTP2=2071
@@ -270,15 +277,45 @@ static int cpu = 5;
 # repurposes the LCC mechanisms in the following way.  The LCC
 # register allocator no longer deals with actual registers but with a
 # piece of page zero memory that we call registers.  Instead of
-# computing a cover of the trees with instruction, we cover the trees
+# computing a cover of the trees with instructions, we cover the trees
 # with sequences of instructions that use the accumulator vAC and
-# the scratch registers (T0..T3) as they see fit. The LBURG grammar 
-# is no longer a tree grammar, but a transducer that converts tree 
-# fragments into sequences. As a result, each nonterminal must be 
+# the scratch registers (T0..T3) as they see fit. The LBURG grammar
+# is no longer a tree grammar, but a transducer that converts tree
+# fragments into sequences. As a result, each nonterminal must be
 # defined by two components: the role it occupies on the tree grammar
 # and the role it occupies in the sequence grammar.
 
-# -- common rules for all LCC targets
+# The template syntax contains several augmentations.
+# * Templates might be split in sections with |. Writing $0 to $9
+#   only prints the first section of the specified kid template.
+#   The other sections can be accessed with syntax $[0b] where '0'
+#   is the kid number and 'b' is a letter indicating
+#   which section to process.
+# * Templates can contain complex constructs %{...} which are
+#   processed by function emit3. For instance %{mul..} is used
+#   to inline multiplications by small constants.
+# * Conditional constructs %{?x==...:yyy:nnn} and %{?x=~...:yyy:nnn}
+#   where x is 0..9 or a..c processes yyy if %x is equal to ...
+#   and otherwise processes no. Comparison with == are always literal.
+#   When the right hand side of a comparison with =~ is an accumulator,
+#   the yes branch is also processed if the accumulator is known
+#   to be equal to register or constant %x.
+# * Clobbering information is deduced from the nonterminal
+#   identity.  For instance rules for nonterminal ac are assumed to
+#   clobber vAC.  When this is the case, annotations ${=x} where x is
+#   %0..9 %a--b, or an accumulator, can be used to indicate the value
+#   taken by the clobbered register. This used to statically track
+#   which registers are equal to which accumulator, informing
+#   conditional constructs with =~.
+# * Clobbering annotations %{!...} documents additional clobbered
+#   registers beyond those implied by the nonterminal.
+#   Inside the braces, letter A, L, and F indicate that vAC, LAC,
+#   and FAC are affected. Letters 4 and 5 are like A but apply only
+#   for cpu versions less than 4 or 5. Note that L implies F and A,
+#   and F implies L and A.
+
+
+# -- common rules
 reg:  INDIRI1(VREGP)     "# read register\n"
 reg:  INDIRU1(VREGP)     "# read register\n"
 reg:  INDIRI2(VREGP)     "# read register\n"
@@ -287,22 +324,14 @@ reg:  INDIRP2(VREGP)     "# read register\n"
 reg:  INDIRI4(VREGP)     "# read register\n"
 reg:  INDIRU4(VREGP)     "# read register\n"
 reg:  INDIRF5(VREGP)     "# read register\n"
-stmt: ASGNI1(VREGP,reg)  "# write register\n"
-stmt: ASGNU1(VREGP,reg)  "# write register\n"
-stmt: ASGNI2(VREGP,reg)  "# write register\n"
-stmt: ASGNU2(VREGP,reg)  "# write register\n"
-stmt: ASGNP2(VREGP,reg)  "# write register\n"
-stmt: ASGNI4(VREGP,reg)  "# write register\n"
-stmt: ASGNU4(VREGP,reg)  "# write register\n"
-stmt: ASGNF5(VREGP,reg)  "# write register\n"
-reg: LOADI1(reg)  "\t%{#alsoVAC}%{src!=vAC:LD(%0);}%{dst!=vAC:ST(%c);}\n"   34
-reg: LOADU1(reg)  "\t%{#alsoVAC}%{src!=vAC:LD(%0);}%{dst!=vAC:ST(%c);}\n"   34
-reg: LOADI2(reg)  "\t%{#alsoVAC}%{src!=vAC:LDW(%0);}%{dst!=vAC:STW(%c);}\n" 40
-reg: LOADU2(reg)  "\t%{#alsoVAC}%{src!=vAC:LDW(%0);}%{dst!=vAC:STW(%c);}\n" 40
-reg: LOADP2(reg)  "\t%{#alsoVAC}%{src!=vAC:LDW(%0);}%{dst!=vAC:STW(%c);}\n" 40
-reg: LOADI4(reg)  "\t%{#mov0}_MOVL(%0,%c);\n" 120
-reg: LOADU4(reg)  "\t%{#mov0}_MOVL(%0,%c);\n" 120
-reg: LOADF5(reg)  "\t%{#mov0}_MOVF(%0,%c);\n" 150
+stmt: ASGNI1(VREGP,reg) "# write register\n"
+stmt: ASGNU1(VREGP,reg) "# write register\n"
+stmt: ASGNI2(VREGP,reg) "# write register\n"
+stmt: ASGNU2(VREGP,reg) "# write register\n"
+stmt: ASGNP2(VREGP,reg) "# write register\n"
+stmt: ASGNI4(VREGP,reg) "# write register\n"
+stmt: ASGNU4(VREGP,reg) "# write register\n"
+stmt: ASGNF5(VREGP,reg) "# write register\n"
 
 # -- constants
 # These non terminal represent constants in the tree grammar
@@ -343,7 +372,7 @@ con: addr     "%0"
 # -- zddr represent a zero page address (equivalent to conB)
 lddr: ADDRLP2 "%a+%F"
 lddr: ADDRFP2 "%a+%F"
-addr: ADDRGP2 "%a" 
+addr: ADDRGP2 "%a"
 addr: con "%0"
 addr: zddr "%0"
 zddr: ADDRGP2 "%a" if_zpglobal(a)
@@ -352,12 +381,13 @@ zddr: conB "%0"
 # -- expressions
 # All the following nonterminals represent expressions in the tree grammar.
 # They differ by what they represent in the sequence grammar.
-# -- reg is the boundary between instruction sequences and
-#    the register allocator. When it appears on the left hand side of a rule,
-#    it represents a completed sequence of instruction that stores
+# -- reg and regx are the boundary between instruction sequences and
+#    the register allocator. When they appear on the left hand side of a rule,
+#    they represents a completed sequence of instruction that stores
 #    its result in a register to be allocated by ralloc.
-#    When it appears on the right hand side of a rule, it represents the
-#    register name containing the value of the expression.
+#    When they appears on the right hand side of a rule, they represent the
+#    register name containing the value of the expression. The only difference
+#    is that the allocator (preralloc) cannot allocate an accumulator to a regx.
 # -- ac represents a sequence of instruction that places the expression value
 #    into register vAC, potentially clobbeting LAC, FAC, and the scratch registers.
 # -- lac and fac are the same but respectively compute long results and fp results
@@ -367,56 +397,57 @@ zddr: conB "%0"
 
 stmt: reg  ""
 stmt: ac   "\t%0\n"
-reg:  ac   "\t%{#alsoVAC}%0%{dst!=vAC:STW(%c);}\n" 20
-ac0: eac0  "%0"
-ac:  ac0   "%0"
-ac:  eac   "%0" 
-eac:  reg   "%{src!=vAC:LDW(%0);}" 20
-eac:  reg   "%{src!=vAC:LDW(%0);}" 20
-eac0: conB  "LDI(%0);" 16
-eac:  con   "LDWI(%0);" 21
-eac:  conBn  "_LDI(%0);" 20
-eac:  zddr  "LDI(%0);" 16
-eac:  addr  "LDWI(%0);" 21
-eac:  reg  "%{src!=vAC:LDW(%0);}" 20
-eac:  eac0 "%0"
-eac0: zddr "LDI(%0);" 16
-eac:  addr "LDWI(%0);" 21
-eac:  lddr "_SP(%0);"  41
+regx: reg  "%{=%0}%0"
+reg:  regx "%{=%0}%0"
+reg:  ac   "\t%{=vAC}%0%{?c==vAC::STW(%c);}\n" 19
+
+eac0: conB  "%{=%0}%{?0=~vAC::LDI(%0);}" 16
+eac0: zddr  "%{=%0}%{?0=~vAC::LDI(%0);}" 16
+ac0:  eac0  "%{=%0}%0"
+eac:  eac0  "%{=%0}%0"
+eac:  reg   "%{=%0}%{?0=~vAC::LDW(%0);}" 20
+eac:  con   "%{=%0}%{?0=~vAC::LDWI(%0);}" 21
+eac:  conBn "%{=%0}%{?0=~vAC::_LDI(%0);}" 20
+eac:  zddr  "%{=%0}%{?0=~vAC::LDI(%0);}" 16
+eac:  addr  "%{=%0}%{?0=~vAC::LDWI(%0);}" 21
+eac:  addr  "%{=%0}%{?0=~vAC::LDWI(%0);}" 21
+eac:  lddr  "%{=%0}%{?0=~vAC::_SP(%0);}" 41
+ac:   ac0   "%{=%0}%0"
+ac:   eac   "%{=%0}%0"
 
 # Loads
 eac:  INDIRI2(eac) "%0DEEK();" 21
 eac:  INDIRU2(eac) "%0DEEK();" 21
 eac:  INDIRP2(eac) "%0DEEK();" 21
-eac0: INDIRI1(eac) "%0PEEK();" 17 
-eac0: INDIRU1(eac) "%0PEEK();" 17 
-eac:  INDIRI2(zddr) "LDW(%0);" 20 
-eac:  INDIRU2(zddr) "LDW(%0);" 20 
-eac:  INDIRP2(zddr) "LDW(%0);" 20 
+eac0: INDIRI1(eac) "%0PEEK();" 17
+eac0: INDIRU1(eac) "%0PEEK();" 17
+eac:  INDIRI2(zddr) "LDW(%0);" 20
+eac:  INDIRU2(zddr) "LDW(%0);" 20
+eac:  INDIRP2(zddr) "LDW(%0);" 20
 eac0: INDIRI1(zddr) "LD(%0);" 18
 eac0: INDIRU1(zddr) "LD(%0);" 18
-ac:  INDIRI2(ac) "%0DEEK();" 21
-ac:  INDIRU2(ac) "%0DEEK();" 21
-ac:  INDIRP2(ac) "%0DEEK();" 21
-ac0: INDIRI1(ac) "%0PEEK();" 17
-ac0: INDIRU1(ac) "%0PEEK();" 17
+ac:   INDIRI2(ac) "%0DEEK();" 21
+ac:   INDIRU2(ac) "%0DEEK();" 21
+ac:   INDIRP2(ac) "%0DEEK();" 21
+ac0:  INDIRI1(ac) "%0PEEK();" 17
+ac0:  INDIRU1(ac) "%0PEEK();" 17
 
 # -- iarg represents the argument of binary integer operations that
 #    map to zero page locations in assembly instructions.  However the
 #    spiller needs to be able to reload a register from an auto
 #    variable without allocating a register. This is achieved by another
-#    branch which defines two fragments using the alternate expansion 
-#    mechanism defined by myemitfmt. The two fragments are a register name (T3)
+#    branch which defines two fragments using the alternate expansion
+#    mechanism defined by emitfmt1. The two fragments are a register name (T3)
 #    and an instruction sequence.
-iarg: reg "%0"
+iarg: regx "%0"
 iarg: INDIRI2(zddr) "%0"
 iarg: INDIRU2(zddr) "%0"
 iarg: INDIRP2(zddr) "%0"
 
-spill: ADDRLP2 "%a+%F" if_spill(50)
-iarg: INDIRU2(spill) "T3|STW(T1);_MOVW([SP,%0],T3);LDW(T1);" 21
-iarg: INDIRI2(spill) "T3|STW(T1);_MOVW([SP,%0],T3);LDW(T1);" 21
-iarg: INDIRP2(spill) "T3|STW(T1);_MOVW([SP,%0],T3);LDW(T1);" 21
+spill: ADDRLP2 "%a+%F" if_spill(20)
+iarg: INDIRU2(spill) "T3|STW(T1);_MOVW([SP,%0],T3);LDW(T1);" 0
+iarg: INDIRI2(spill) "T3|STW(T1);_MOVW([SP,%0],T3);LDW(T1);" 0
+iarg: INDIRP2(spill) "T3|STW(T1);_MOVW([SP,%0],T3);LDW(T1);" 0
 
 # Integer operations. This is verbose because there are variants for
 # types I2, U2, P2, variants for argument ordering, and variants for
@@ -427,23 +458,23 @@ ac: ADDP2(ac,iarg)  "%0%[1b]ADDW(%1);" 28
 ac: ADDI2(iarg,ac)  "%1%[0b]ADDW(%0);" 28
 ac: ADDU2(iarg,ac)  "%1%[0b]ADDW(%0);" 28
 ac: ADDP2(iarg,ac)  "%1%[0b]ADDW(%0);" 28
-ac: ADDI2(ac,conB) "%0ADDI(%1);" 27
-ac: ADDU2(ac,conB) "%0ADDI(%1);" 27
-ac: ADDP2(ac,conB) "%0ADDI(%1);" 27
-ac: ADDI2(ac,conBn) "%0SUBI(-(%1));" 27
-ac: ADDU2(ac,conBn) "%0SUBI(-(%1));" 27
-ac: ADDP2(ac,conBn) "%0SUBI(-(%1));" 27
+ac: ADDI2(ac,conB)  "%0ADDI(%1);"      if_incr(a,17,27)
+ac: ADDU2(ac,conB)  "%0ADDI(%1);"      if_incr(a,17,27)
+ac: ADDP2(ac,conB)  "%0ADDI(%1);"      if_incr(a,17,27)
+ac: ADDI2(ac,conBn) "%0SUBI(-(%1));"   if_incr(a,17,27)
+ac: ADDU2(ac,conBn) "%0SUBI(-(%1));"   if_incr(a,17,27)
+ac: ADDP2(ac,conBn) "%0SUBI(-(%1));"   if_incr(a,17,27)
 ac: SUBI2(ac,iarg)  "%0%[1b]SUBW(%1);" 28
 ac: SUBU2(ac,iarg)  "%0%[1b]SUBW(%1);" 28
 ac: SUBP2(ac,iarg)  "%0%[1b]SUBW(%1);" 28
-ac: SUBI2(ac,conB) "%0SUBI(%1);" 27
-ac: SUBU2(ac,conB) "%0SUBI(%1);" 27
-ac: SUBP2(ac,conB) "%0SUBI(%1);" 27
-ac: SUBI2(ac,conBn) "%0ADDI(-(%1));" 27
-ac: SUBU2(ac,conBn) "%0ADDI(-(%1));" 27
-ac: SUBP2(ac,conBn) "%0ADDI(-(%1));" 27
+ac: SUBI2(ac,conB)  "%0SUBI(%1);"      27
+ac: SUBU2(ac,conB)  "%0SUBI(%1);"      27
+ac: SUBP2(ac,conB)  "%0SUBI(%1);"      27
+ac: SUBI2(ac,conBn) "%0ADDI(-(%1));"   27
+ac: SUBU2(ac,conBn) "%0ADDI(-(%1));"   27
+ac: SUBP2(ac,conBn) "%0ADDI(-(%1));"   27
 ac: NEGI2(ac)       "%0STW(T3);LDI(0);SUBW(T3);" 68
-ac: NEGI2(reg)      "LDI(0);SUBW(%0);" 48
+ac: NEGI2(regx)     "LDI(0);SUBW(%0);" 48
 ac: LSHI2(ac, con1) "%0LSLW();" 28
 ac: LSHU2(ac, con1) "%0LSLW();" 28
 ac: LSHI2(ac, conB) "%0_SHLI(%1);" 100
@@ -454,17 +485,17 @@ ac: LSHI2(ac, iarg) "%0%[1b]_SHL(%1);" 200
 ac: RSHI2(ac, iarg) "%0%[1b]_SHRS(%1);" 200
 ac: LSHU2(ac, iarg) "%0%[1b]_SHL(%1);" 200
 ac: RSHU2(ac, iarg) "%0%[1b]_SHRU(%1);" 200
-ac: MULI2(conB, ac) "%1%{mul0}" 100
-ac: MULI2(conBn, ac) "%1%{mul0}" 110
-ac: MULI2(conB, reg) "%{mul0%1}" 100
-ac: MULI2(conBn, reg) "%{mul0%1}" 110
-ac: MULI2(con, ac)  "%1_MULI(%0);" 200
-ac: MULI2(ac, iarg) "%0%[1b]_MUL(%1);" 200
-ac: MULI2(iarg, ac) "%1%[0b]_MUL(%0);" 200
-ac: MULU2(conB, ac) "%1%{mul0}" 100
-ac: MULU2(con, ac)  "%1_MULI(%0);" 200
-ac: MULU2(ac, iarg) "%0%[1b]_MUL(%1);" 200
-ac: MULU2(iarg, ac) "%1%[0b]_MUL(%0);" 200
+ac: MULI2(conB, ac)    "%1%{mul0}" 100
+ac: MULI2(conBn, ac)   "%1%{mul0}" 110
+ac: MULI2(conB, regx)  "%{mul0%1}" 100
+ac: MULI2(conBn, regx) "%{mul0%1}" 110
+ac: MULI2(con, ac)     "%1_MULI(%0);" 200
+ac: MULI2(ac, iarg)    "%0%[1b]_MUL(%1);" 200
+ac: MULI2(iarg, ac)    "%1%[0b]_MUL(%0);" 200
+ac: MULU2(conB, ac)    "%1%{mul0}" 100
+ac: MULU2(con, ac)     "%1_MULI(%0);" 200
+ac: MULU2(ac, iarg)    "%0%[1b]_MUL(%1);" 200
+ac: MULU2(iarg, ac)    "%1%[0b]_MUL(%0);" 200
 ac: DIVI2(ac, iarg) "%0%[1b]_DIVS(%1);" 200
 ac: DIVU2(ac, iarg) "%0%[1b]_DIVU(%1);" 200
 ac: MODI2(ac, iarg) "%0%[1b]_MODS(%1);" 200
@@ -475,35 +506,35 @@ ac: MODI2(ac, con)  "%0%[1b]_MODIS(%1);" 200
 ac: MODU2(ac, con)  "%0%[1b]_MODIU(%1);" 200
 ac: BCOMI2(ac)      "%0STW(T3);_LDI(-1);XORW(T3);" 68
 ac: BCOMU2(ac)      "%0STW(T3);_LDI(-1);XORW(T3);" 68
-ac: BANDI2(ac,iarg)  "%0%[1b]ANDW(%1);" 28
-ac: BANDU2(ac,iarg)  "%0%[1b]ANDW(%1);" 28
-ac: BANDI2(iarg,ac)  "%1%[0b]ANDW(%0);" 28
-ac: BANDU2(iarg,ac)  "%1%[0b]ANDW(%0);" 28
-ac: BANDI2(ac,conB)  "%0ANDI(%1);" 16 
-ac: BANDU2(ac,conB)  "%0ANDI(%1);" 16 
+ac: BANDI2(ac,iarg) "%0%[1b]ANDW(%1);" 28
+ac: BANDU2(ac,iarg) "%0%[1b]ANDW(%1);" 28
+ac: BANDI2(iarg,ac) "%1%[0b]ANDW(%0);" 28
+ac: BANDU2(iarg,ac) "%1%[0b]ANDW(%0);" 28
+ac: BANDI2(ac,conB) "%0ANDI(%1);" 16
+ac: BANDU2(ac,conB) "%0ANDI(%1);" 16
 ac: BORI2(ac,iarg)  "%0%[1b]ORW(%1);" 28
 ac: BORU2(ac,iarg)  "%0%[1b]ORW(%1);" 28
 ac: BORI2(iarg,ac)  "%1%[0b]ORW(%0);" 28
 ac: BORU2(iarg,ac)  "%1%[0b]ORW(%0);" 28
-ac: BORI2(ac,conB)  "%0ORI(%1);" 16 
-ac: BORU2(ac,conB)  "%0ORI(%1);" 16 
-ac: BXORI2(ac,iarg)  "%0%[1b]XORW(%1);" 28
-ac: BXORU2(ac,iarg)  "%0%[1b]XORW(%1);" 28
-ac: BXORI2(iarg,ac)  "%1%[0b]XORW(%0);" 28
-ac: BXORU2(iarg,ac)  "%1%[0b]XORW(%0);" 28
-ac: BXORI2(ac,conB)  "%0XORI(%1);" 16 
-ac: BXORU2(ac,conB)  "%0XORI(%1);" 
+ac: BORI2(ac,conB)  "%0ORI(%1);" 16
+ac: BORU2(ac,conB)  "%0ORI(%1);" 16
+ac: BXORI2(ac,iarg) "%0%[1b]XORW(%1);" 28
+ac: BXORU2(ac,iarg) "%0%[1b]XORW(%1);" 28
+ac: BXORI2(iarg,ac) "%1%[0b]XORW(%0);" 28
+ac: BXORU2(iarg,ac) "%1%[0b]XORW(%0);" 28
+ac: BXORI2(ac,conB) "%0XORI(%1);" 16
+ac: BXORU2(ac,conB) "%0XORI(%1);"
 
 # A couple EAC variants
-eac: ADDI2(eac,conB) "%0ADDI(%1);" 28
-eac: ADDU2(eac,conB) "%0ADDI(%1);" 28
-eac: ADDP2(eac,conB) "%0ADDI(%1);" 28
+eac: ADDI2(eac,conB)  "%0ADDI(%1);" 28
+eac: ADDU2(eac,conB)  "%0ADDI(%1);" 28
+eac: ADDP2(eac,conB)  "%0ADDI(%1);" 28
 eac: ADDI2(eac,conBn) "%0SUBI(-(%1));" 28
 eac: ADDU2(eac,conBn) "%0SUBI(-(%1));" 28
 eac: ADDP2(eac,conBn) "%0SUBI(-(%1));" 28
-eac: SUBI2(eac,conB) "%0SUBI(%1);" 28
-eac: SUBU2(eac,conB) "%0SUBI(%1);" 28
-eac: SUBP2(eac,conB) "%0SUBI(%1);" 28
+eac: SUBI2(eac,conB)  "%0SUBI(%1);" 28
+eac: SUBU2(eac,conB)  "%0SUBI(%1);" 28
+eac: SUBP2(eac,conB)  "%0SUBI(%1);" 28
 eac: SUBI2(eac,conBn) "%0ADDI(-(%1));" 28
 eac: SUBU2(eac,conBn) "%0ADDI(-(%1));" 28
 eac: SUBP2(eac,conBn) "%0ADDI(-(%1));" 28
@@ -537,56 +568,56 @@ stmt: ASGNU1(zddr,ac)  "\t%1ST(%0);\n" 20
 stmt: ASGNU1(iarg,ac)  "\t%1%[0b]POKE(%0);\n" 26
 
 # Conditional branches
-stmt: EQI2(ac,con0)  "\t%0_BEQ(%a);\n" 28
-stmt: EQI2(ac,conB)  "\t%0XORI(%1);_BEQ(%a);\n" 42
-stmt: EQI2(ac,iarg)  "\t%0%[1b]XORW(%1);_BEQ(%a);\n" 54
-stmt: EQI2(iarg,ac)  "\t%1%[0b]XORW(%0);_BEQ(%a);\n" 54
-stmt: NEI2(ac,con0)  "\t%0_BNE(%a);\n" 28
-stmt: NEI2(ac,conB)  "\t%0XORI(%1);_BNE(%a);\n" 42
-stmt: NEI2(ac,iarg)  "\t%0%[1b]XORW(%1);_BNE(%a);\n" 54
-stmt: NEI2(iarg,ac)  "\t%1%[0b]XORW(%0);_BNE(%a);\n" 54
-stmt: EQU2(ac,con0)  "\t%0_BEQ(%a);\n" 28
-stmt: EQU2(ac,conB)  "\t%0XORI(%1);_BEQ(%a);\n" 42
-stmt: EQU2(ac,iarg)  "\t%0%[1b]XORW(%1);_BEQ(%a);\n" 54
-stmt: EQU2(iarg,ac)  "\t%1%[0b]XORW(%0);_BEQ(%a);\n" 54
-stmt: NEU2(ac,con0)  "\t%0_BNE(%a);\n" 28
-stmt: NEU2(ac,conB)  "\t%0XORI(%1);_BNE(%a);\n" 42
-stmt: NEU2(ac,iarg)  "\t%0%[1b]XORW(%1);_BNE(%a);\n" 54
-stmt: NEU2(iarg,ac)  "\t%1%[0b]XORW(%0);_BNE(%a);\n" 54
-stmt: LTI2(ac,con0) "\t%0_BLT(%a);\n" 28
-stmt: LEI2(ac,con0) "\t%0_BLE(%a);\n" 28
-stmt: GTI2(ac,con0) "\t%0_BGT(%a);\n" 28
-stmt: GEI2(ac,con0) "\t%0_BGE(%a);\n" 28
-stmt: GTU2(ac,con0) "\t%0_BNE(%a);\n" 28
-stmt: LEU2(ac,con0) "\t%0_BEQ(%a);\n" 28
-stmt: LTI2(ac,conB) "\t%0_CMPIS(%1);_BLT(%a);\n" 80
-stmt: LEI2(ac,conB) "\t%0_CMPIS(%1);_BLE(%a);\n" 80
-stmt: GTI2(ac,conB) "\t%0_CMPIS(%1);_BGT(%a);\n" 80
-stmt: GEI2(ac,conB) "\t%0_CMPIS(%1);_BGE(%a);\n" 80
-stmt: LTU2(ac,conB) "\t%0_CMPIU(%1);_BLT(%a);\n" 80
-stmt: LEU2(ac,conB) "\t%0_CMPIU(%1);_BLE(%a);\n" 80
-stmt: GTU2(ac,conB) "\t%0_CMPIU(%1);_BGT(%a);\n" 80
-stmt: GEU2(ac,conB) "\t%0_CMPIU(%1);_BGE(%a);\n" 80
-stmt: LTI2(ac,iarg) "\t%0%[1b]_CMPWS(%1);_BLT(%a);\n" 100
-stmt: LEI2(ac,iarg) "\t%0%[1b]_CMPWS(%1);_BLE(%a);\n" 100
-stmt: GTI2(ac,iarg) "\t%0%[1b]_CMPWS(%1);_BGT(%a);\n" 100
-stmt: GEI2(ac,iarg) "\t%0%[1b]_CMPWS(%1);_BGE(%a);\n" 100
-stmt: LTU2(ac,iarg) "\t%0%[1b]_CMPWU(%1);_BLT(%a);\n" 100
-stmt: LEU2(ac,iarg) "\t%0%[1b]_CMPWU(%1);_BLE(%a);\n" 100
-stmt: GTU2(ac,iarg) "\t%0%[1b]_CMPWU(%1);_BGT(%a);\n" 100
-stmt: GEU2(ac,iarg) "\t%0%[1b]_CMPWU(%1);_BGE(%a);\n" 100
-stmt: LTI2(iarg,ac) "\t%1%[0b]_CMPWS(%0);_BGT(%a);\n" 100
-stmt: LEI2(iarg,ac) "\t%1%[0b]_CMPWS(%0);_BGE(%a);\n" 100
-stmt: GTI2(iarg,ac) "\t%1%[0b]_CMPWS(%0);_BLT(%a);\n" 100
-stmt: GEI2(iarg,ac) "\t%1%[0b]_CMPWS(%0);_BLE(%a);\n" 100
-stmt: LTU2(iarg,ac) "\t%1%[0b]_CMPWU(%0);_BGT(%a);\n" 100
-stmt: LEU2(iarg,ac) "\t%1%[0b]_CMPWU(%0);_BGE(%a);\n" 100
-stmt: GTU2(iarg,ac) "\t%1%[0b]_CMPWU(%0);_BLT(%a);\n" 100
-stmt: GEU2(iarg,ac) "\t%1%[0b]_CMPWU(%0);_BLE(%a);\n" 100
+stmt: EQI2(ac,con0)  "\t%0_BEQ(%a)%{!4};\n" 28
+stmt: EQI2(ac,conB)  "\t%0XORI(%1);_BEQ(%a)%{!A};\n" 42
+stmt: EQI2(ac,iarg)  "\t%0%[1b]XORW(%1);_BEQ(%a)%{!A};\n" 54
+stmt: EQI2(iarg,ac)  "\t%1%[0b]XORW(%0);_BEQ(%a)%{!A};\n" 54
+stmt: NEI2(ac,con0)  "\t%0_BNE(%a)%{!4};\n" 28
+stmt: NEI2(ac,conB)  "\t%0XORI(%1);_BNE(%a)%{!A};\n" 42
+stmt: NEI2(ac,iarg)  "\t%0%[1b]XORW(%1);_BNE(%a)%{!A};\n" 54
+stmt: NEI2(iarg,ac)  "\t%1%[0b]XORW(%0);_BNE(%a)%{!A};\n" 54
+stmt: EQU2(ac,con0)  "\t%0_BEQ(%a)%{!4};\n" 28
+stmt: EQU2(ac,conB)  "\t%0XORI(%1);_BEQ(%a)%{!A};\n" 42
+stmt: EQU2(ac,iarg)  "\t%0%[1b]XORW(%1);_BEQ(%a)%{!A};\n" 54
+stmt: EQU2(iarg,ac)  "\t%1%[0b]XORW(%0);_BEQ(%a)%{!A};\n" 54
+stmt: NEU2(ac,con0)  "\t%0_BNE(%a)%{!4};\n" 28
+stmt: NEU2(ac,conB)  "\t%0XORI(%1);_BNE(%a)%{!A};\n" 42
+stmt: NEU2(ac,iarg)  "\t%0%[1b]XORW(%1);_BNE(%a)%{!A};\n" 54
+stmt: NEU2(iarg,ac)  "\t%1%[0b]XORW(%0);_BNE(%a)%{!A};\n" 54
+stmt: LTI2(ac,con0) "\t%0_BLT(%a)%{!4};\n" 28
+stmt: LEI2(ac,con0) "\t%0_BLE(%a)%{!4};\n" 28
+stmt: GTI2(ac,con0) "\t%0_BGT(%a)%{!4};\n" 28
+stmt: GEI2(ac,con0) "\t%0_BGE(%a)%{!4};\n" 28
+stmt: GTU2(ac,con0) "\t%0_BNE(%a)%{!4};\n" 28
+stmt: LEU2(ac,con0) "\t%0_BEQ(%a)%{!4};\n" 28
+stmt: LTI2(ac,conB) "\t%0_CMPIS(%1);_BLT(%a)%{!A};\n" 80
+stmt: LEI2(ac,conB) "\t%0_CMPIS(%1);_BLE(%a)%{!A};\n" 80
+stmt: GTI2(ac,conB) "\t%0_CMPIS(%1);_BGT(%a)%{!A};\n" 80
+stmt: GEI2(ac,conB) "\t%0_CMPIS(%1);_BGE(%a)%{!A};\n" 80
+stmt: LTU2(ac,conB) "\t%0_CMPIU(%1);_BLT(%a)%{!A};\n" 80
+stmt: LEU2(ac,conB) "\t%0_CMPIU(%1);_BLE(%a)%{!A};\n" 80
+stmt: GTU2(ac,conB) "\t%0_CMPIU(%1);_BGT(%a)%{!A};\n" 80
+stmt: GEU2(ac,conB) "\t%0_CMPIU(%1);_BGE(%a)%{!A};\n" 80
+stmt: LTI2(ac,iarg) "\t%0%[1b]_CMPWS(%1);_BLT(%a)%{!A};\n" 100
+stmt: LEI2(ac,iarg) "\t%0%[1b]_CMPWS(%1);_BLE(%a)%{!A};\n" 100
+stmt: GTI2(ac,iarg) "\t%0%[1b]_CMPWS(%1);_BGT(%a)%{!A};\n" 100
+stmt: GEI2(ac,iarg) "\t%0%[1b]_CMPWS(%1);_BGE(%a)%{!A};\n" 100
+stmt: LTU2(ac,iarg) "\t%0%[1b]_CMPWU(%1);_BLT(%a)%{!A};\n" 100
+stmt: LEU2(ac,iarg) "\t%0%[1b]_CMPWU(%1);_BLE(%a)%{!A};\n" 100
+stmt: GTU2(ac,iarg) "\t%0%[1b]_CMPWU(%1);_BGT(%a)%{!A};\n" 100
+stmt: GEU2(ac,iarg) "\t%0%[1b]_CMPWU(%1);_BGE(%a)%{!A};\n" 100
+stmt: LTI2(iarg,ac) "\t%1%[0b]_CMPWS(%0);_BGT(%a)%{!A};\n" 100
+stmt: LEI2(iarg,ac) "\t%1%[0b]_CMPWS(%0);_BGE(%a)%{!A};\n" 100
+stmt: GTI2(iarg,ac) "\t%1%[0b]_CMPWS(%0);_BLT(%a)%{!A};\n" 100
+stmt: GEI2(iarg,ac) "\t%1%[0b]_CMPWS(%0);_BLE(%a)%{!A};\n" 100
+stmt: LTU2(iarg,ac) "\t%1%[0b]_CMPWU(%0);_BGT(%a)%{!A};\n" 100
+stmt: LEU2(iarg,ac) "\t%1%[0b]_CMPWU(%0);_BGE(%a)%{!A};\n" 100
+stmt: GTU2(iarg,ac) "\t%1%[0b]_CMPWU(%0);_BLT(%a)%{!A};\n" 100
+stmt: GEU2(iarg,ac) "\t%1%[0b]_CMPWU(%0);_BLE(%a)%{!A};\n" 100
 
 # Nonterminals for assignments with MOVM/MOVL/MOVF:
 #   stmt: ASGNx(vdst,xAC) "\t%1%[0b]_xMOV(xAC,%0);\n"
-#   stmt: ASGNx(vdst,reg) "\t%{#mov1}%[0b]_xMOV(%1,%0);\n"
+#   stmt: ASGNx(vdst,reg) "\t%[0b]_xMOV(%1,%0);\n"
 #   stmt: ASGNx(addr,INDIRx(asrc)) "\t%[1b]_xMOV(%1,%0);\n"
 #   stmt: ASGNx(ac,  INDIRx(asrc)) "\t%0STW(T2);%[1b]_xMOV(%1,[T2]);\n"
 #   stmt: ASGNx(lddr,INDIRx(lsrc)) "\t_xMOV(%1,[SP,%0]);\n"
@@ -599,171 +630,171 @@ asrc: eac "[vAC]|%0"
 lsrc: addr "%0"
 
 # Structs
-stmt: ARGB(INDIRB(asrc))        "\t_SP(%c);STW(T2);%[0b]_MOVM(%0,[T2],%a,%b);\n"  200
-stmt: ASGNB(addr,INDIRB(asrc)) "\t%[1b]_MOVM(%1,%0,%a,%b);\n" 200
-stmt: ASGNB(ac,  INDIRB(asrc)) "\t%0STW(T2);%[1b]_MOVM(%1,[T2],%a,%b);\n" 200
-stmt: ASGNB(lddr,INDIRB(lsrc)) "\t_MOVM(%1,[SP,%0],%a,%b);\n" 200
+stmt: ARGB(INDIRB(asrc))        "\t_SP(%c);STW(T2);%[0b]_MOVM(%0,[T2],%a,%b)%{!A};\n"  200
+stmt: ASGNB(addr,INDIRB(asrc)) "\t%[1b]_MOVM(%1,%0,%a,%b)%{!A};\n" 200
+stmt: ASGNB(ac,  INDIRB(asrc)) "\t%0STW(T2);%[1b]_MOVM(%1,[T2],%a,%b)%{!A};\n" 200
+stmt: ASGNB(lddr,INDIRB(lsrc)) "\t_MOVM(%1,[SP,%0],%a,%b)%{!A};\n" 200
 
 # Longs
 # - larg represent argument expressions in binary tree nodes,
-#   as well as sequence of instructions that compute the address 
+#   as well as sequence of instructions that compute the address
 #   holding the expressiong result.
-stmt: lac "\t%0\n"
-larg: reg "LDI(%0);" 21
-larg: INDIRI4(eac) "%0" 
-larg: INDIRU4(eac) "%0" 
-reg: lac "\t%{#alsoLAC}%0%{dst!=LAC:_MOVL(LAC,%c);}\n" 120
-reg: INDIRI4(ac)   "\t%0_MOVL([vAC],%c);\n" 120
-reg: INDIRU4(ac)   "\t%0_MOVL([vAC],%c);\n" 120
-reg: INDIRI4(lddr) "\t_MOVL([SP,%0],%c);\n" 160
-reg: INDIRU4(lddr) "\t_MOVL([SP,%0],%c);\n" 160
-reg: INDIRI4(addr) "\t_MOVL(%0,%c);\n" 120
-reg: INDIRU4(addr) "\t_MOVL(%0,%c);\n" 120
-lac: reg "%{src!=LAC:_MOVL(%0,LAC);}" 120
-lac: INDIRI4(ac)   "%0_MOVL([vAC],LAC);" 120
-lac: INDIRU4(ac)   "%0_MOVL([vAC],LAC);" 120
-lac: INDIRU4(lddr) "_MOVL([SP,%0],LAC);" 160
-lac: INDIRU4(lddr) "_MOVL([SP,%0],LAC);" 160
-lac: INDIRI4(addr) "_MOVL(%0,LAC);" 120
-lac: INDIRU4(addr) "_MOVL(%0,LAC);" 120
-lac: ADDI4(lac,larg) "%0%1_LADD();" 200
-lac: ADDU4(lac,larg) "%0%1_LADD();" 200
-lac: ADDI4(larg,lac) "%1%0_LADD();" 200
-lac: ADDU4(larg,lac) "%1%0_LADD();" 200
-lac: SUBI4(lac,larg) "%0%1_LSUB();" 200
-lac: SUBU4(lac,larg) "%0%1_LSUB();" 200
-lac: MULI4(lac,larg) "%0%1_LMUL();" 200
-lac: MULU4(lac,larg) "%0%1_LMUL();" 200
-lac: MULI4(larg,lac) "%1%0_LMUL();" 200
-lac: MULU4(larg,lac) "%1%0_LMUL();" 200
-lac: DIVI4(lac,larg) "%0%1_LDIVS();" 200
-lac: DIVU4(lac,larg) "%0%1_LDIVU();" 200
-lac: MODI4(lac,larg) "%0%1_LMODS();" 200
-lac: MODU4(lac,larg) "%0%1_LMODU();" 200
-lac: LSHI4(lac,reg)  "%0LDW(%1);_LSHL();" 200
-lac: LSHI4(lac,conB) "%0LDI(%1);_LSHL();"  200
-lac: LSHU4(lac,reg)  "%0LDW(%1);_LSHL();"  200
-lac: LSHU4(lac,conB) "%0LDI(%1);_LSHL();"  200
-lac: RSHI4(lac,reg)  "%0LDW(%1);_LSHRS();" 200
-lac: RSHI4(lac,conB) "%0LDI(%1);_LSHRS();" 200
-lac: RSHU4(lac,reg)  "%0LDW(%1);_LSHRU();" 200
-lac: RSHU4(lac,conB) "%0LDI(%1);_LSHRU();" 200
-lac: NEGI4(lac) "%0_LNEG();" 200
-lac: BCOMU4(lac) "%0_LCOM();" 200
-lac: BANDU4(lac,larg) "%0%1_LAND();" 200
-lac: BANDU4(larg,lac) "%1%0_LAND();" 200
-lac: BORU4(lac,larg) "%0%1_LOR();" 200
-lac: BORU4(larg,lac) "%1%0_LOR();" 200
-lac: BXORU4(lac,larg) "%0%1_LXOR();" 200
-lac: BXORU4(larg,lac) "%1%0_LXOR();" 200
-lac: BCOMI4(lac) "%0_LCOM();" 200
-lac: BANDI4(lac,larg) "%0%1_LAND();" 200
-lac: BANDI4(larg,lac) "%1%0_LAND();" 200
-lac: BORI4(lac,larg) "%0%1_LOR();" 200
-lac: BORI4(larg,lac) "%1%0_LOR();" 200
-lac: BXORI4(lac,larg) "%0%1_LXOR();" 200
-lac: BXORI4(larg,lac) "%1%0_LXOR();" 200
-stmt: LTI4(lac,larg) "\t%0%1_LCMPS();_BLT(%a);\n" 200
-stmt: LEI4(lac,larg) "\t%0%1_LCMPS();_BLE(%a);\n" 200
-stmt: GTI4(lac,larg) "\t%0%1_LCMPS();_BGT(%a);\n" 200
-stmt: GEI4(lac,larg) "\t%0%1_LCMPS();_BGE(%a);\n" 200
-stmt: LTU4(lac,larg) "\t%0%1_LCMPU();_BLT(%a);\n" 200
-stmt: LEU4(lac,larg) "\t%0%1_LCMPU();_BLE(%a);\n" 200
-stmt: GTU4(lac,larg) "\t%0%1_LCMPU();_BGT(%a);\n" 200
-stmt: GEU4(lac,larg) "\t%0%1_LCMPU();_BGE(%a);\n" 200
-stmt: NEI4(lac,larg) "\t%0%1_LCMPX();_BNE(%a);\n" 100
-stmt: EQI4(lac,larg) "\t%0%1_LCMPX();_BEQ(%a);\n" 100
-stmt: NEU4(lac,larg) "\t%0%1_LCMPX();_BNE(%a);\n" 100
-stmt: EQU4(lac,larg) "\t%0%1_LCMPX();_BEQ(%a);\n" 100
-stmt: LTI4(larg,lac) "\t%1%0_LCMPS();_BGT(%a);\n" 200
-stmt: LEI4(larg,lac) "\t%1%0_LCMPS();_BGE(%a);\n" 200
-stmt: GTI4(larg,lac) "\t%1%0_LCMPS();_BLT(%a);\n" 200
-stmt: GEI4(larg,lac) "\t%1%0_LCMPS();_BLE(%a);\n" 200
-stmt: LTU4(larg,lac) "\t%1%0_LCMPU();_BGT(%a);\n" 200
-stmt: LEU4(larg,lac) "\t%1%0_LCMPU();_BGE(%a);\n" 200
-stmt: GTU4(larg,lac) "\t%1%0_LCMPU();_BLT(%a);\n" 200
-stmt: GEU4(larg,lac) "\t%1%0_LCMPU();_BLE(%a);\n" 200
-stmt: NEI4(larg,lac) "\t%1%0_LCMPX();_BNE(%a);\n" 100
-stmt: EQI4(larg,lac) "\t%1%0_LCMPX();_BEQ(%a);\n" 100
-stmt: NEU4(larg,lac) "\t%1%0_LCMPX();_BNE(%a);\n" 100
-stmt: EQU4(larg,lac) "\t%1%0_LCMPX();_BEQ(%a);\n" 100
-stmt: ASGNI4(vdst,lac)           "\t%1%[0b]_MOVL(LAC,%0);\n" 120
-stmt: ASGNI4(vdst,reg)           "\t%{#mov1}%[0b]_MOVL(%1,%0);\n" 120
-stmt: ASGNI4(addr,INDIRI4(asrc)) "\t%[1b]_MOVL(%1,%0);\n" 120
-stmt: ASGNI4(ac,  INDIRI4(asrc)) "\t%0STW(T2);%[1b]_MOVL(%1,[T2]);\n" 120
-stmt: ASGNI4(lddr,INDIRI4(lsrc)) "\t_MOVL(%1,[SP,%0]);\n" 120
-stmt: ASGNU4(vdst,lac)           "\t%1%[0b]_MOVL(LAC,%0);\n" 120
-stmt: ASGNU4(vdst,reg)           "\t%{#mov1}%[0b]_MOVL(%1,%0);\n" 120
-stmt: ASGNU4(addr,INDIRU4(asrc)) "\t%[1b]_MOVL(%1,%0);\n" 120
-stmt: ASGNU4(ac,  INDIRU4(asrc)) "\t%0STW(T2);%[1b]_MOVL(%1,[T2]);\n" 120
-stmt: ASGNU4(lddr,INDIRU4(lsrc)) "\t_MOVL(%1,[SP,%0]);\n" 120
+stmt: lac          "\t%0\n"
+larg: regx         "LDI(%0)%{!A};" 21
+larg: INDIRI4(eac) "%0"
+larg: INDIRU4(eac) "%0"
+reg:  lac          "\t%{=LAC}%0%{?c==LAC::_MOVL(LAC,%c);}%{!5}\n" 119
+reg: INDIRI4(ac)   "\t%0_MOVL([vAC],%c)%{!A};\n" 120
+reg: INDIRU4(ac)   "\t%0_MOVL([vAC],%c)%{!A};\n" 120
+reg: INDIRI4(lddr) "\t_MOVL([SP,%0],%c)%{!A};\n" 160
+reg: INDIRU4(lddr) "\t_MOVL([SP,%0],%c)%{!A};\n" 160
+reg: INDIRI4(addr) "\t_MOVL(%0,%c)%{!A};\n" 120
+reg: INDIRU4(addr) "\t_MOVL(%0,%c)%{!A};\n" 120
+lac: reg           "%{=%0}%{?0=~LAC::_MOVL(%0,LAC);}%{!5}" 120
+lac: INDIRI4(ac)   "%0_MOVL([vAC],LAC)%{!A};" 120
+lac: INDIRU4(ac)   "%0_MOVL([vAC],LAC)%{!A};" 120
+lac: INDIRU4(lddr) "_MOVL([SP,%0],LAC)%{!A};" 160
+lac: INDIRU4(lddr) "_MOVL([SP,%0],LAC)%{!A};" 160
+lac: INDIRI4(addr) "_MOVL(%0,LAC)%{!A};" 120
+lac: INDIRU4(addr) "_MOVL(%0,LAC)%{!A};" 120
+lac: ADDI4(lac,larg) "%0%1_LADD()%{!5};" 200
+lac: ADDU4(lac,larg) "%0%1_LADD()%{!5};" 200
+lac: ADDI4(larg,lac) "%1%0_LADD()%{!5};" 200
+lac: ADDU4(larg,lac) "%1%0_LADD()%{!5};" 200
+lac: SUBI4(lac,larg) "%0%1_LSUB()%{!5};" 200
+lac: SUBU4(lac,larg) "%0%1_LSUB()%{!5};" 200
+lac: MULI4(lac,larg) "%0%1_LMUL()%{!A};" 200
+lac: MULU4(lac,larg) "%0%1_LMUL()%{!A};" 200
+lac: MULI4(larg,lac) "%1%0_LMUL()%{!A};" 200
+lac: MULU4(larg,lac) "%1%0_LMUL()%{!A};" 200
+lac: DIVI4(lac,larg) "%0%1_LDIVS()%{!A};" 200
+lac: DIVU4(lac,larg) "%0%1_LDIVU()%{!A};" 200
+lac: MODI4(lac,larg) "%0%1_LMODS()%{!A};" 200
+lac: MODU4(lac,larg) "%0%1_LMODU()%{!A};" 200
+lac: LSHI4(lac,reg)  "%0LDW(%1);_LSHL()%{!A};"  200
+lac: LSHI4(lac,conB) "%0LDI(%1);_LSHL()%{!A};"  200
+lac: LSHU4(lac,reg)  "%0LDW(%1);_LSHL()%{!A};"  200
+lac: LSHU4(lac,conB) "%0LDI(%1);_LSHL()%{!A};"  200
+lac: RSHI4(lac,reg)  "%0LDW(%1);_LSHRS()%{!A};" 200
+lac: RSHI4(lac,conB) "%0LDI(%1);_LSHRS()%{!A};" 200
+lac: RSHU4(lac,reg)  "%0LDW(%1);_LSHRU()%{!A};" 200
+lac: RSHU4(lac,conB) "%0LDI(%1);_LSHRU()%{!A};" 200
+lac: NEGI4(lac)       "%0_LNEG()%{!5};"   200
+lac: BCOMU4(lac)      "%0_LCOM()%{!5};"   200
+lac: BANDU4(lac,larg) "%0%1_LAND()%{!A};" 200
+lac: BANDU4(larg,lac) "%1%0_LAND()%{!A};" 200
+lac: BORU4(lac,larg)  "%0%1_LOR()%{!A};"  200
+lac: BORU4(larg,lac)  "%1%0_LOR()%{!A};"  200
+lac: BXORU4(lac,larg) "%0%1_LXOR()%{!A};" 200
+lac: BXORU4(larg,lac) "%1%0_LXOR()%{!A};" 200
+lac: BCOMI4(lac)      "%0_LCOM()%{!5};"   200
+lac: BANDI4(lac,larg) "%0%1_LAND()%{!A};" 200
+lac: BANDI4(larg,lac) "%1%0_LAND()%{!A};" 200
+lac: BORI4(lac,larg) "%0%1_LOR()%{!A};"   200
+lac: BORI4(larg,lac) "%1%0_LOR()%{!A};"   200
+lac: BXORI4(lac,larg) "%0%1_LXOR()%{!A};" 200
+lac: BXORI4(larg,lac) "%1%0_LXOR()%{!A};" 200
+stmt: LTI4(lac,larg) "\t%0%1_LCMPS();_BLT(%a)%{!A};\n" 200
+stmt: LEI4(lac,larg) "\t%0%1_LCMPS();_BLE(%a)%{!A};\n" 200
+stmt: GTI4(lac,larg) "\t%0%1_LCMPS();_BGT(%a)%{!A};\n" 200
+stmt: GEI4(lac,larg) "\t%0%1_LCMPS();_BGE(%a)%{!A};\n" 200
+stmt: LTU4(lac,larg) "\t%0%1_LCMPU();_BLT(%a)%{!A};\n" 200
+stmt: LEU4(lac,larg) "\t%0%1_LCMPU();_BLE(%a)%{!A};\n" 200
+stmt: GTU4(lac,larg) "\t%0%1_LCMPU();_BGT(%a)%{!A};\n" 200
+stmt: GEU4(lac,larg) "\t%0%1_LCMPU();_BGE(%a)%{!A};\n" 200
+stmt: NEI4(lac,larg) "\t%0%1_LCMPX();_BNE(%a)%{!A};\n" 100
+stmt: EQI4(lac,larg) "\t%0%1_LCMPX();_BEQ(%a)%{!A};\n" 100
+stmt: NEU4(lac,larg) "\t%0%1_LCMPX();_BNE(%a)%{!A};\n" 100
+stmt: EQU4(lac,larg) "\t%0%1_LCMPX();_BEQ(%a)%{!A};\n" 100
+stmt: LTI4(larg,lac) "\t%1%0_LCMPS();_BGT(%a)%{!A};\n" 200
+stmt: LEI4(larg,lac) "\t%1%0_LCMPS();_BGE(%a)%{!A};\n" 200
+stmt: GTI4(larg,lac) "\t%1%0_LCMPS();_BLT(%a)%{!A};\n" 200
+stmt: GEI4(larg,lac) "\t%1%0_LCMPS();_BLE(%a)%{!A};\n" 200
+stmt: LTU4(larg,lac) "\t%1%0_LCMPU();_BGT(%a)%{!A};\n" 200
+stmt: LEU4(larg,lac) "\t%1%0_LCMPU();_BGE(%a)%{!A};\n" 200
+stmt: GTU4(larg,lac) "\t%1%0_LCMPU();_BLT(%a)%{!A};\n" 200
+stmt: GEU4(larg,lac) "\t%1%0_LCMPU();_BLE(%a)%{!A};\n" 200
+stmt: NEI4(larg,lac) "\t%1%0_LCMPX();_BNE(%a)%{!A};\n" 100
+stmt: EQI4(larg,lac) "\t%1%0_LCMPX();_BEQ(%a)%{!A};\n" 100
+stmt: NEU4(larg,lac) "\t%1%0_LCMPX();_BNE(%a)%{!A};\n" 100
+stmt: EQU4(larg,lac) "\t%1%0_LCMPX();_BEQ(%a)%{!A};\n" 100
+stmt: ASGNI4(vdst,lac)           "\t%1%[0b]_MOVL(LAC,%0)%{!A};\n" 120
+stmt: ASGNI4(vdst,reg)           "\t%[0b]_MOVL(%1,%0)%{!A};\n" 120
+stmt: ASGNI4(addr,INDIRI4(asrc)) "\t%[1b]_MOVL(%1,%0)%{!A};\n" 120
+stmt: ASGNI4(ac,  INDIRI4(asrc)) "\t%0STW(T2);%[1b]_MOVL(%1,[T2])%{!A};\n" 120
+stmt: ASGNI4(lddr,INDIRI4(lsrc)) "\t_MOVL(%1,[SP,%0])%{!A};\n" 160
+stmt: ASGNU4(vdst,lac)           "\t%1%[0b]_MOVL(LAC,%0)%{!A};\n" 120
+stmt: ASGNU4(vdst,reg)           "\t%[0b]_MOVL(%1,%0)%{!A};\n" 120
+stmt: ASGNU4(addr,INDIRU4(asrc)) "\t%[1b]_MOVL(%1,%0)%{!A};\n" 120
+stmt: ASGNU4(ac,  INDIRU4(asrc)) "\t%0STW(T2);%[1b]_MOVL(%1,[T2])%{!A};\n" 120
+stmt: ASGNU4(lddr,INDIRU4(lsrc)) "\t_MOVL(%1,[SP,%0])%{!A};\n" 160
 
 # Floats
 stmt: fac "\t%0\n"
-farg: reg "LDI(%0);" 21
+farg: regx "LDI(%0)%{!A};" 21
 farg: INDIRF5(eac) "%0"
-reg: fac "\t%{#alsoFAC}%0%{dst!=FAC:_MOVF(FAC,%c);}\n" 180
-reg: INDIRF5(ac)   "\t%0_MOVF([vAC],%c);\n" 150
-reg: INDIRF5(lddr) "\t_MOVF([SP,%0],%c);\n" 190
-reg: INDIRF5(addr) "\t_MOVF(%0,%c);\n" 150
-fac: reg            "%{src!=FAC:_MOVF(%0,FAC);}" 150
-fac: INDIRF5(ac)    "%0_MOVF([vAC],FAC);" 180
-fac: INDIRF5(lddr)  "_MOVF([SP,%0],FAC);" 220
-fac: INDIRF5(addr)  "_MOVF(%0,FAC);" 180
-fac: ADDF5(fac,farg) "%0%1_FADD();" 200
-fac: ADDF5(farg,fac) "%1%0_FADD();" 200
-fac: SUBF5(fac,farg) "%0%1_FSUB();" 200
-fac: SUBF5(farg,fac) "%1_FNEG();%0_FADD();" 200+50
-fac: MULF5(fac,farg) "%0%1_FMUL();" 200
-fac: MULF5(farg,fac) "%1%0_FMUL();" 200
-fac: DIVF5(fac,farg) "%0%1_FDIV();" 200
-fac: NEGF5(fac)      "%0_FNEG();" 50
-stmt: EQF5(fac,farg) "\t%0%1_FCMP();_BEQ(%a);\n" 200
-stmt: NEF5(fac,farg) "\t%0%1_FCMP();_BNE(%a);\n" 200
-stmt: LTF5(fac,farg) "\t%0%1_FCMP();_BLT(%a);\n" 200
-stmt: LEF5(fac,farg) "\t%0%1_FCMP();_BLE(%a);\n" 200
-stmt: GTF5(fac,farg) "\t%0%1_FCMP();_BGT(%a);\n" 200
-stmt: GEF5(fac,farg) "\t%0%1_FCMP();_BGE(%a);\n" 200
-stmt: EQF5(farg,fac) "\t%1%0_FCMP();_BEQ(%a);\n" 200
-stmt: NEF5(farg,fac) "\t%1%0_FCMP();_BNE(%a);\n" 200
-stmt: LTF5(farg,fac) "\t%1%0_FCMP();_BGT(%a);\n" 200
-stmt: LEF5(farg,fac) "\t%1%0_FCMP();_BGE(%a);\n" 200
-stmt: GTF5(farg,fac) "\t%1%0_FCMP();_BLT(%a);\n" 200
-stmt: GEF5(farg,fac) "\t%1%0_FCMP();_BLE(%a);\n" 200
-stmt: ASGNF5(vdst,fac) "\t%1%[0b]_MOVF(FAC,%0);\n" 180
-stmt: ASGNF5(vdst,reg) "\t%{#mov1}%[0b]_MOVF(%1,%0);\n"    150
-stmt: ASGNF5(addr,INDIRF5(asrc)) "\t%[1b]_MOVF(%1,%0);\n" 150
-stmt: ASGNF5(ac,  INDIRF5(asrc)) "\t%0STW(T2);%[1b]_MOVF(%1,[T2]);\n" 150
-stmt: ASGNF5(lddr,INDIRF5(lsrc)) "\t_MOVF(%1,[SP,%0]);\n" 150
+reg:  fac           "\t%{=FAC}%0%{?c==FAC::_MOVF(FAC,%c);}%{!A}\n" 179
+reg: INDIRF5(ac)    "\t%0_MOVF([vAC],%c)%{!A};\n" 150
+reg: INDIRF5(lddr)  "\t_MOVF([SP,%0],%c)%{!A};\n" 190
+reg: INDIRF5(addr)  "\t_MOVF(%0,%c)%{!A%c};\n"    150
+fac: reg            "%{=%0}%{?0=~FAC::_MOVF(%0,FAC)%{!A};}"  179
+fac: INDIRF5(ac)    "%0_MOVF([vAC],FAC)%{!A};"    180
+fac: INDIRF5(lddr)  "_MOVF([SP,%0],FAC)%{!A};"    220
+fac: INDIRF5(addr)  "_MOVF(%0,FAC)%{!A};"         180
+fac: ADDF5(fac,farg) "%0%1_FADD()%{!A};"          200
+fac: ADDF5(farg,fac) "%1%0_FADD()%{!A};"          200
+fac: SUBF5(fac,farg) "%0%1_FSUB()%{!A};"          200
+fac: SUBF5(farg,fac) "%1_FNEG();%0_FADD()%{!A};"  200+50
+fac: MULF5(fac,farg) "%0%1_FMUL()%{!A};"          200
+fac: MULF5(farg,fac) "%1%0_FMUL()%{!A};"          200
+fac: DIVF5(fac,farg) "%0%1_FDIV()%{!A};"          200
+fac: NEGF5(fac)      "%0_FNEG()%{!A};"            50
+stmt: EQF5(fac,farg) "\t%0%1_FCMP();_BEQ(%a)%{!A};\n" 200
+stmt: NEF5(fac,farg) "\t%0%1_FCMP();_BNE(%a)%{!A};\n" 200
+stmt: LTF5(fac,farg) "\t%0%1_FCMP();_BLT(%a)%{!A};\n" 200
+stmt: LEF5(fac,farg) "\t%0%1_FCMP();_BLE(%a)%{!A};\n" 200
+stmt: GTF5(fac,farg) "\t%0%1_FCMP();_BGT(%a)%{!A};\n" 200
+stmt: GEF5(fac,farg) "\t%0%1_FCMP();_BGE(%a)%{!A};\n" 200
+stmt: EQF5(farg,fac) "\t%1%0_FCMP();_BEQ(%a)%{!A};\n" 200
+stmt: NEF5(farg,fac) "\t%1%0_FCMP();_BNE(%a)%{!A};\n" 200
+stmt: LTF5(farg,fac) "\t%1%0_FCMP();_BGT(%a)%{!A};\n" 200
+stmt: LEF5(farg,fac) "\t%1%0_FCMP();_BGE(%a)%{!A};\n" 200
+stmt: GTF5(farg,fac) "\t%1%0_FCMP();_BLT(%a)%{!A};\n" 200
+stmt: GEF5(farg,fac) "\t%1%0_FCMP();_BLE(%a)%{!A};\n" 200
+stmt: ASGNF5(vdst,fac) "\t%1%[0b]_MOVF(FAC,%0)%{!A};\n"                    180
+stmt: ASGNF5(vdst,reg) "\t%[0b]_MOVF(%1,%0)%{!A};\n"                       150
+stmt: ASGNF5(addr,INDIRF5(asrc)) "\t%[1b]_MOVF(%1,%0)%{!A};\n"             150
+stmt: ASGNF5(ac,  INDIRF5(asrc)) "\t%0STW(T2);%[1b]_MOVF(%1,[T2])%{!A};\n" 150
+stmt: ASGNF5(lddr,INDIRF5(lsrc)) "\t_MOVF(%1,[SP,%0])%{!A};\n"             190
 
 # Calls
-fac: CALLF5(addr) "CALLI(%0);" mincpu5(28)
-fac: CALLF5(reg)  "CALL(%0);" 26
-fac: CALLF5(ac)   "%0CALL(vAC);" 26
-lac: CALLI4(addr) "CALLI(%0);" mincpu5(28)
-lac: CALLI4(reg)  "CALL(%0);" 26
-lac: CALLI4(ac)   "%0CALL(vAC);" 26
-lac: CALLU4(addr) "CALLI(%0);" mincpu5(28)
-lac: CALLU4(reg)  "CALL(%0);" 26
-lac: CALLU4(ac)   "%0CALL(vAC);" 26
-ac: CALLI2(addr)  "CALLI(%0);" mincpu5(28)
-ac: CALLI2(reg)   "CALL(%0);" 26
-ac: CALLI2(ac)    "%0CALL(vAC);" 26
-ac: CALLU2(addr)  "CALLI(%0);" mincpu5(28)
-ac: CALLU2(reg)   "CALL(%0);" 26
-ac: CALLU2(ac)    "%0CALL(vAC);" 26
-ac: CALLP2(addr)  "CALLI(%0);" mincpu5(28)
-ac: CALLP2(reg)   "CALL(%0);" 26
-ac: CALLP2(ac)    "%0CALL(vAC);" 26
-stmt: CALLV(addr) "\tCALLI(%0);\n" mincpu5(28)
-stmt: CALLV(reg)  "\tCALL(%0);\n" 26
-stmt: CALLV(ac)   "\t%0CALL(vAC);\n" 26
-stmt: ARGF5(reg)  "\t_MOVF(%0,[SP,%c]);\n"  if_arg_stk(a)
-stmt: ARGI4(reg)  "\t_MOVL(%0,[SP,%c]);\n"  if_arg_stk(a)
-stmt: ARGU4(reg)  "\t_MOVL(%0,[SP,%c]);\n"  if_arg_stk(a)
-stmt: ARGI2(reg)  "\t_MOVW(%0,[SP,%c]);\n"  if_arg_stk(a)
-stmt: ARGU2(reg)  "\t_MOVW(%0,[SP,%c]);\n"  if_arg_stk(a)
-stmt: ARGP2(reg)  "\t_MOVW(%0,[SP,%c]);\n"  if_arg_stk(a)
+fac: CALLF5(addr) "CALLI(%0)%{!ALF};" mincpu5(28)
+fac: CALLF5(reg)  "CALL(%0)%{!ALF};" 26
+fac: CALLF5(ac)   "%0CALL(vAC)%{!ALF};" 26
+lac: CALLI4(addr) "CALLI(%0)%{!ALF};" mincpu5(28)
+lac: CALLI4(reg)  "CALL(%0)%{!ALF};" 26
+lac: CALLI4(ac)   "%0CALL(vAC)%{!ALF};" 26
+lac: CALLU4(addr) "CALLI(%0)%{!ALF};" mincpu5(28)
+lac: CALLU4(reg)  "CALL(%0)%{!ALF};" 26
+lac: CALLU4(ac)   "%0CALL(vAC)%{!ALF};" 26
+ac: CALLI2(addr)  "CALLI(%0)%{!ALF};" mincpu5(28)
+ac: CALLI2(reg)   "CALL(%0)%{!ALF};" 26
+ac: CALLI2(ac)    "%0CALL(vAC)%{!ALF};" 26
+ac: CALLU2(addr)  "CALLI(%0)%{!ALF};" mincpu5(28)
+ac: CALLU2(reg)   "CALL(%0)%{!ALF};" 26
+ac: CALLU2(ac)    "%0CALL(vAC)%{!ALF};" 26
+ac: CALLP2(addr)  "CALLI(%0)%{!ALF};" mincpu5(28)
+ac: CALLP2(reg)   "CALL(%0)%{!ALF};" 26
+ac: CALLP2(ac)    "%0CALL(vAC)%{!ALF};" 26
+stmt: CALLV(addr) "\tCALLI(%0)%{!ALF};\n" mincpu5(28)
+stmt: CALLV(reg)  "\tCALL(%0)%{!ALF};\n" 26
+stmt: CALLV(ac)   "\t%0CALL(vAC)%{!ALF};\n" 26
+stmt: ARGF5(reg)  "\t_MOVF(%0,[SP,%c])%{!A};\n"  if_arg_stk(a)
+stmt: ARGI4(reg)  "\t_MOVL(%0,[SP,%c])%{!A};\n"  if_arg_stk(a)
+stmt: ARGU4(reg)  "\t_MOVL(%0,[SP,%c])%{!A};\n"  if_arg_stk(a)
+stmt: ARGI2(reg)  "\t_MOVW(%0,[SP,%c])%{!A};\n"  if_arg_stk(a)
+stmt: ARGU2(reg)  "\t_MOVW(%0,[SP,%c])%{!A};\n"  if_arg_stk(a)
+stmt: ARGP2(reg)  "\t_MOVW(%0,[SP,%c])%{!A};\n"  if_arg_stk(a)
 stmt: ARGF5(reg)  "# arg\n"  if_arg_reg_only(a)
 stmt: ARGI4(reg)  "# arg\n"  if_arg_reg_only(a)
 stmt: ARGU4(reg)  "# arg\n"  if_arg_reg_only(a)
@@ -786,20 +817,26 @@ stmt: RETP2(ac)   "\t%0\n"  1
 # 1) prelabel changes all truncations into LOADs
 ac0: LOADI1(reg) "LD(%0);" 18
 ac0: LOADU1(reg) "LD(%0);" 18
-ac: LOADI1(ac) "%0"
-ac: LOADU1(ac) "%0"
-ac: LOADI2(ac) "%0"
-ac: LOADU2(ac) "%0"
-ac: LOADP2(ac) "%0"
-ac: LOADI2(reg) "LDW(%0);" 20
-ac: LOADU2(reg) "LDW(%0);" 20
-ac: LOADP2(reg) "LDW(%0);" 20
+ac: LOADI1(ac) "%{=%0}%0"
+ac: LOADU1(ac) "%{=%0}%0"
+ac: LOADI2(ac) "%{=%0}%0"
+ac: LOADU2(ac) "%{=%0}%0"
+ac: LOADP2(ac) "%{=%0}%0"
+ac: LOADI2(reg)  "%{=%0}%{?0=~vAC::LDW(%0);}" 20
+ac: LOADU2(reg)  "%{=%0}%{?0=~vAC::LDW(%0);}" 20
+ac: LOADP2(reg)  "%{=%0}%{?0=~vAC::LDW(%0);}" 20
 ac: LOADI2(lac) "%0LDW(LAC);" 20
 ac: LOADU2(lac) "%0LDW(LAC);" 20
 ac: LOADP2(lac) "%0LDW(LAC);" 20
-lac: LOADI4(lac) "%0"
-lac: LOADU4(lac) "%0"
-fac: LOADF5(fac) "%0"
+lac: LOADI4(lac) "%{=%0}%0"
+lac: LOADU4(lac) "%{=%0}%0"
+fac: LOADF5(fac) "%{=%0}%0"
+
+reg: LOADI1(reg)   "\t%{?0=~vAC::LD(%0);}ST(%c)%{!A};\n"   34
+reg: LOADU1(reg)   "\t%{?0=~vAC::LD(%0);}ST(%c)%{!A};\n"   34
+reg: LOADI4(reg)   "\t_MOVL(%0,%c)%{!5};\n" 120
+reg: LOADU4(reg)   "\t_MOVL(%0,%c)%{!5};\n" 120
+regx: LOADF5(regx) "\t_MOVF(%0,%c)%{!5};\n" 150
 
 # 2) extensions
 ac: CVII2(reg) "LD(%0);XORI(128);SUBI(128);" if_cv_from(a,1,66)
@@ -812,25 +849,25 @@ lac: CVIU4(ac) "%0_STLU(LAC);" 50
 lac: CVII4(ac) "%0_STLS(LAC);" 50
 lac: CVUU4(ac) "%0_STLU(LAC);" 50
 lac: CVUI4(ac) "%0_STLU(LAC);" 50
-reg: CVIU4(ac) "\t%0_STLU(%c);\n" 50
-reg: CVII4(ac) "\t%0_STLS(%c);\n" 50
-reg: CVUU4(ac) "\t%0_STLU(%c);\n" 50
-reg: CVUI4(ac) "\t%0_STLU(%c);\n" 50
+reg: CVIU4(ac) "\t%0_STLU(%c)%{!5};\n" 50
+reg: CVII4(ac) "\t%0_STLS(%c)%{!5};\n" 50
+reg: CVUU4(ac) "\t%0_STLU(%c)%{!5};\n" 50
+reg: CVUI4(ac) "\t%0_STLU(%c)%{!5};\n" 50
 # 3) floating point conversions
-ac: CVFU2(fac)  "%0_FTOU();LDW(LAC);" 200
+ac: CVFU2(fac)  "%0_FTOU();LDW(LAC)%{!L};" 200
 lac: CVFU4(fac) "%0_FTOU();" 200
 fac: CVUF5(ac)  "%0_STLU(LAC);_FCVU();" if_cv_from(a,2,180)
 fac: CVUF5(lac) "%0_FCVU();" if_cv_from(a,4,200)
-ac: CVFI2(fac)  "%0_FTOI();LDW(LAC);" 200
+ac: CVFI2(fac)  "%0_FTOI();LDW(LAC)%{!L};" 200
 lac: CVFI4(fac) "%0_FTOI();" 200
 fac: CVIF5(ac)  "%0_STLS(LAC);_FCVI();" if_cv_from(a,2,180)
 fac: CVIF5(lac) "%0_FCVI();" if_cv_from(a,4,200)
 
 # Labels and jumps
-stmt: LABELV       "\tlabel(%a);\n"
-stmt: JUMPV(addr)  "\t_BRA(%0);\n"    14
-stmt: JUMPV(reg)   "\tCALL(%0);\n"    14
-stmt: JUMPV(ac)    "\t%0CALL(vAC);\n" 14
+stmt: LABELV       "\tlabel(%a)%{!ALF};\n"
+stmt: JUMPV(addr)  "\t_BRA(%0);\n"          14
+stmt: JUMPV(reg)   "\tCALL(%0)%{!ALF};\n"    14
+stmt: JUMPV(ac)    "\t%0CALL(vAC)%{!ALF};\n" 14
 
 # More about spills: we want to save/restore vAC when genspill() inserts
 # instructions because preralloc might have decided to use vAC at this
@@ -843,14 +880,6 @@ stmt: ASGNU4(spill,reg) "\tSTW(T3);_MOVL(%1,[SP,%0]);LDW(T3) #genspill\n" 0
 stmt: ASGNF5(spill,reg) "\tSTW(T3);_MOVF(%1,[SP,%0]);LDW(T3) #genspill\n" 0
 
 # More opcodes for cpu=6
-reg: LOADI1(reg)  "\t%{#keepsAC}MOVB(%0,%c)\n" mincpu6(28)
-reg: LOADU1(reg)  "\t%{#keepsAC}MOVB(%0,%c)\n" mincpu6(28)
-reg: LOADI2(reg)  "\t%{#keepsAC}MOVW(%0,%c)\n" mincpu6(22+30)
-reg: LOADU2(reg)  "\t%{#keepsAC}MOVW(%0,%c)\n" mincpu6(22+30)
-reg: LOADP2(reg)  "\t%{#keepsAC}MOVW(%0,%c)\n" mincpu6(22+30)
-reg: LOADP2(reg)  "\t%{#keepsAC}MOVW(%0,%c)\n" mincpu6(22+30)
-reg: LOADI4(reg)  "\t%{#keepsAC}MOVL(%0,%c)\n" mincpu6(22+40)
-reg: LOADU4(reg)  "\t%{#keepsAC}MOVL(%0,%c)\n" mincpu6(22+40)
 stmt: ASGNP2(ac,iarg)  "\t%0%[1b]DOKEA(%1);\n" mincpu6(30)
 stmt: ASGNI2(ac,iarg)  "\t%0%[1b]DOKEA(%1);\n" mincpu6(30)
 stmt: ASGNU2(ac,iarg)  "\t%0%[1b]DOKEA(%1);\n" mincpu6(30)
@@ -867,16 +896,17 @@ stmt: ASGNI2(addr,ac)  "\t%1STW2(%0);\n" mincpu6(22+28)
 stmt: ASGNU2(addr,ac)  "\t%1STW2(%0);\n" mincpu6(22+28)
 stmt: ASGNI1(addr,ac)  "\t%1STB2(%0);\n" mincpu6(22+26)
 stmt: ASGNU1(addr,ac)  "\t%1STB2(%0);\n" mincpu6(22+26)
-reg: INDIRI2(ac) "\t%{#canVAC}%0%{dst!=vAC:DEEKA(%c)}%{dst==vAC:DEEK()};\n" mincpu6(30)
-reg: INDIRU2(ac) "\t%{#canVAC}%0%{dst!=vAC:DEEKA(%c)}%{dst==vAC:DEEK()};\n" mincpu6(30)
-reg: INDIRP2(ac) "\t%{#canVAC}%0%{dst!=vAC:DEEKA(%c)}%{dst==vAC:DEEK()};\n" mincpu6(30)
-reg: INDIRI1(ac) "\t%{#canVAC}%0%{dst!=vAC:PEEKA(%c)}%{dst==vAC:PEEK()};\n" mincpu6(28)
-reg: INDIRU1(ac) "\t%{#canVAC}%0%{dst!=vAC:PEEKA(%c)}%{dst==vAC:PEEK()};\n" mincpu6(28)
-ac: INDIRI2(reg) "%{src!=vAC:DEEKV(%0)}%{src==vAC:DEEK()};" mincpu6(30)
-ac: INDIRU2(reg) "%{src!=vAC:DEEKV(%0)}%{src==vAC:DEEK()};" mincpu6(30)
-ac: INDIRP2(reg) "%{src!=vAC:DEEKV(%0)}%{src==vAC:DEEK()};" mincpu6(30)
-ac: INDIRI1(reg) "%{src!=vAC:PEEKV(%0)}%{src==vAC:PEEK()};" mincpu6(30)
-ac: INDIRU1(reg) "%{src!=vAC:PEEKV(%0)}%{src==vAC:PEEK()};" mincpu6(30)
+reg: INDIRI2(ac) "\t%0%{?c==vAC:DEEK():DEEKA(%c)};\n" mincpu6(29)
+reg: INDIRU2(ac) "\t%0%{?c==vAC:DEEK():DEEKA(%c)};\n" mincpu6(29)
+reg: INDIRP2(ac) "\t%0%{?c==vAC:DEEK():DEEKA(%c)};\n" mincpu6(29)
+reg: INDIRI1(ac) "\t%0%{?c==vAC:PEEK():PEEKA(%c)};\n" mincpu6(27)
+reg: INDIRU1(ac) "\t%0%{?c==vAC:PEEK():PEEKA(%c)};\n" mincpu6(27)
+
+ac: INDIRI2(reg)  "%{?0=~vAC:DEEK():DEEKV(%0)};" mincpu6(30)
+ac: INDIRU2(reg)  "%{?0=~vAC:DEEK():DEEKV(%0)};" mincpu6(30)
+ac: INDIRP2(reg)  "%{?0=~vAC:DEEK():DEEKV(%0)};" mincpu6(30)
+ac: INDIRI1(reg)  "%{?0=~vAC:PEEK():PEEKV(%0)};" mincpu6(30)
+ac: INDIRU1(reg)  "%{?0=~vAC:PEEK():PEEKV(%0)};" mincpu6(30)
 ac: ADDI2(ac,con) "%0ADDWI(%1);" mincpu6(22+27)
 ac: ADDU2(ac,con) "%0ADDWI(%1);" mincpu6(22+27)
 ac: ADDP2(ac,con) "%0ADDWI(%1);" mincpu6(22+27)
@@ -897,7 +927,7 @@ ac: BORI2(CVUI2(reg),conB) "ORBK(%0,%1);" mincpu6(29)
 ac: BORU2(CVUI2(reg),conB) "ORBK(%0,%1);" mincpu6(29)
 ac: BXORI2(CVUI2(reg),conB) "XORBK(%0,%1);" mincpu6(29)
 ac: BXORU2(CVUI2(reg),conB) "XORBK(%0,%1);" mincpu6(29)
-ac: NEGI2(ac)  "%0NEGW(vAC);" mincpu6(48)
+ac: NEGI2(ac)               "%0NEGW(vAC);" mincpu6(48)
 ac: ADDI2(ac,CVUI2(iarg)) "%0ADDBA(%1);" mincpu6(28)
 ac: ADDU2(ac,CVUI2(iarg)) "%0ADDBA(%1);" mincpu6(28)
 ac: SUBU2(ac,CVUI2(iarg)) "%0SUBBA(%1);" mincpu6(28)
@@ -906,26 +936,26 @@ ac: SUBI2(ac,CVUI2(iarg)) "%0SUBBA(%1);" mincpu6(28)
 # Read-modify-write
 rmw: VREGP "%a"
 rmw: zddr "%0"
-stmt: ASGNU1(rmw, LOADU1(ADDI2(CVUI2(INDIRU1(rmw)), con1))) "\t%{#keepsAC}INC(%0);\n" if_rmw(a,16)
-stmt: ASGNI1(rmw, LOADI1(ADDI2(CVII2(INDIRI1(rmw)), con1))) "\t%{#keepsAC}INC(%0);\n" if_rmw(a,16)
-stmt: ASGNU1(rmw, LOADU1(SUBI2(CVUI2(INDIRU1(rmw)), con1))) "\t%{#keepsAC}DEC(%0);\n" mincpu6(if_rmw(a,16))
-stmt: ASGNI1(rmw, LOADI1(SUBI2(CVII2(INDIRI1(rmw)), con1))) "\t%{#keepsAC}DEC(%0);\n" mincpu6(if_rmw(a,16))
+stmt: ASGNU1(rmw, LOADU1(ADDI2(CVUI2(INDIRU1(rmw)), con1))) "\tINC(%0);\n" if_rmw(a,16)
+stmt: ASGNI1(rmw, LOADI1(ADDI2(CVII2(INDIRI1(rmw)), con1))) "\tINC(%0);\n" if_rmw(a,16)
+stmt: ASGNU1(rmw, LOADU1(SUBI2(CVUI2(INDIRU1(rmw)), con1))) "\tDEC(%0);\n" mincpu6(if_rmw(a,16))
+stmt: ASGNI1(rmw, LOADI1(SUBI2(CVII2(INDIRI1(rmw)), con1))) "\tDEC(%0);\n" mincpu6(if_rmw(a,16))
 
-stmt: ASGNP2(rmw, ADDP2(INDIRP2(rmw), con1)) "\t%{#keepsAC}INCW(%0);\n" mincpu6(if_rmw(a, 26))
-stmt: ASGNU2(rmw, ADDU2(INDIRU2(rmw), con1)) "\t%{#keepsAC}INCW(%0);\n" mincpu6(if_rmw(a, 26))
-stmt: ASGNI2(rmw, ADDI2(INDIRI2(rmw), con1)) "\t%{#keepsAC}INCW(%0);\n" mincpu6(if_rmw(a, 26))
-stmt: ASGNP2(rmw, SUBP2(INDIRP2(rmw), con1)) "\t%{#keepsAC}DECW(%0);\n" mincpu6(if_rmw(a, 26))
-stmt: ASGNU2(rmw, SUBU2(INDIRU2(rmw), con1)) "\t%{#keepsAC}DECW(%0);\n" mincpu6(if_rmw(a, 26))
-stmt: ASGNI2(rmw, SUBI2(INDIRI2(rmw), con1)) "\t%{#keepsAC}DECW(%0);\n" mincpu6(if_rmw(a, 26))
-stmt: ASGNP2(rmw, ADDP2(INDIRP2(rmw), con1n)) "\t%{#keepsAC}DECW(%0);\n" mincpu6(if_rmw(a, 26))
-stmt: ASGNU2(rmw, ADDU2(INDIRU2(rmw), con1n)) "\t%{#keepsAC}DECW(%0);\n" mincpu6(if_rmw(a, 26))
-stmt: ASGNI2(rmw, ADDI2(INDIRI2(rmw), con1n)) "\t%{#keepsAC}DECW(%0);\n" mincpu6(if_rmw(a, 26))
-stmt: ASGNI2(rmw, NEGI2(INDIRI2(rmw))) "\t%{#keepsAC}NEGW(%0);\n" mincpu6(if_rmw(a, 48))
-stmt: ASGNI2(rmw, BCOMI2(INDIRI2(rmw))) "\%{#keepsAC}tNOTW(%0);\n" mincpu6(if_rmw(a, 48))
-stmt: ASGNU2(rmw, BCOMU2(INDIRU2(rmw))) "\t%{#keepsAC}NOTW(%0);\n" mincpu6(if_rmw(a, 48))
-stmt: ASGNI2(rmw, LSHI2(INDIRI2(rmw),con1)) "\t%{#keepsAC}LSLV(%0);\n" mincpu6(if_rmw(a, 56))
-stmt: ASGNU2(rmw, LSHU2(INDIRU2(rmw),con1)) "\t%{#keepsAC}LSLV(%0);\n" mincpu6(if_rmw(a, 56))
-stmt: ASGNU2(rmw, RSHU2(INDIRU2(rmw),con1)) "\t%{#keepsAC}LSRV(%0);\n" mincpu6(if_rmw(a, 56))
+stmt: ASGNP2(rmw, ADDP2(INDIRP2(rmw), con1)) "\tINCW(%0);\n" mincpu6(if_rmw(a, 26))
+stmt: ASGNU2(rmw, ADDU2(INDIRU2(rmw), con1)) "\tINCW(%0);\n" mincpu6(if_rmw(a, 26))
+stmt: ASGNI2(rmw, ADDI2(INDIRI2(rmw), con1)) "\tINCW(%0);\n" mincpu6(if_rmw(a, 26))
+stmt: ASGNP2(rmw, SUBP2(INDIRP2(rmw), con1)) "\tDECW(%0);\n" mincpu6(if_rmw(a, 26))
+stmt: ASGNU2(rmw, SUBU2(INDIRU2(rmw), con1)) "\tDECW(%0);\n" mincpu6(if_rmw(a, 26))
+stmt: ASGNI2(rmw, SUBI2(INDIRI2(rmw), con1)) "\tDECW(%0);\n" mincpu6(if_rmw(a, 26))
+stmt: ASGNP2(rmw, ADDP2(INDIRP2(rmw), con1n)) "\tDECW(%0);\n" mincpu6(if_rmw(a, 26))
+stmt: ASGNU2(rmw, ADDU2(INDIRU2(rmw), con1n)) "\tDECW(%0);\n" mincpu6(if_rmw(a, 26))
+stmt: ASGNI2(rmw, ADDI2(INDIRI2(rmw), con1n)) "\tDECW(%0);\n" mincpu6(if_rmw(a, 26))
+stmt: ASGNI2(rmw, NEGI2(INDIRI2(rmw)))        "\tNEGW(%0);\n" mincpu6(if_rmw(a, 48))
+stmt: ASGNI2(rmw, BCOMI2(INDIRI2(rmw)))       "\tNOTW(%0);\n" mincpu6(if_rmw(a, 48))
+stmt: ASGNU2(rmw, BCOMU2(INDIRU2(rmw)))       "\tNOTW(%0);\n" mincpu6(if_rmw(a, 48))
+stmt: ASGNI2(rmw, LSHI2(INDIRI2(rmw),con1))   "\tLSLV(%0);\n" mincpu6(if_rmw(a, 56))
+stmt: ASGNU2(rmw, LSHU2(INDIRU2(rmw),con1))   "\tLSLV(%0);\n" mincpu6(if_rmw(a, 56))
+stmt: ASGNU2(rmw, RSHU2(INDIRU2(rmw),con1))   "\tLSRV(%0);\n" mincpu6(if_rmw(a, 56))
 
 stmt: ASGNP2(rmw, ADDP2(INDIRP2(rmw), conB)) "\tADDVI(%2,%0);\n" mincpu6(if_rmw(a, 50))
 stmt: ASGNU2(rmw, ADDU2(INDIRU2(rmw), conB)) "\tADDVI(%2,%0);\n" mincpu6(if_rmw(a, 50))
@@ -943,17 +973,17 @@ stmt: ASGNP2(rmw, SUBP2(INDIRP2(rmw), iarg)) "\t%[2b]SUBVW(%2,%0);\n" mincpu6(if
 stmt: ASGNU2(rmw, SUBU2(INDIRU2(rmw), iarg)) "\t%[2b]SUBVW(%2,%0);\n" mincpu6(if_rmw(a, 52))
 stmt: ASGNI2(rmw, SUBI2(INDIRI2(rmw), iarg)) "\t%[2b]SUBVW(%2,%0);\n" mincpu6(if_rmw(a, 52))
 
-stmt: ASGNI2(rmw, conB) "\t%{#keepsAC}MOVQW(%1,%0)\n" mincpu6(if_not_asgn_tmp(a,29))
-stmt: ASGNU2(rmw, conB) "\t%{#keepsAC}MOVQW(%1,%0)\n" mincpu6(if_not_asgn_tmp(a,29))
-stmt: ASGNP2(rmw, conB) "\t%{#keepsAC}MOVQW(%1,%0)\n" mincpu6(if_not_asgn_tmp(a,29))
-stmt: ASGNI1(rmw, conB) "\t%{#keepsAC}MOVQB(%1,%0)\n" mincpu6(if_not_asgn_tmp(a,27))
-stmt: ASGNU1(rmw, conB) "\t%{#keepsAC}MOVQB(%1,%0)\n" mincpu6(if_not_asgn_tmp(a,27))
+stmt: ASGNI2(rmw, conB) "\tMOVQW(%1,%0)\n" mincpu6(if_not_asgn_tmp(a,29))
+stmt: ASGNU2(rmw, conB) "\tMOVQW(%1,%0)\n" mincpu6(if_not_asgn_tmp(a,29))
+stmt: ASGNP2(rmw, conB) "\tMOVQW(%1,%0)\n" mincpu6(if_not_asgn_tmp(a,29))
+stmt: ASGNI1(rmw, conB) "\tMOVQB(%1,%0)\n" mincpu6(if_not_asgn_tmp(a,27))
+stmt: ASGNU1(rmw, conB) "\tMOVQB(%1,%0)\n" mincpu6(if_not_asgn_tmp(a,27))
 
-reg: LOADI1(conBs)  "\t%{#keepsAC}MOVQB(%0,%c)\n" mincpu6(27)
-reg: LOADU1(conB)   "\t%{#keepsAC}MOVQB(%0,%c)\n" mincpu6(27)
-reg: LOADI2(conB)   "\t%{#keepsAC}MOVQW(%0,%c)\n" mincpu6(29)
-reg: LOADU2(conB)   "\t%{#keepsAC}MOVQW(%0,%c)\n" mincpu6(29)
-reg: LOADP2(conB)   "\t%{#keepsAC}MOVQW(%0,%c)\n" mincpu6(29)
+regx: LOADI1(conBs)  "\tMOVQB(%0,%c)\n" mincpu6(27)
+regx: LOADU1(conB)   "\tMOVQB(%0,%c)\n" mincpu6(27)
+regx: LOADI2(conB)   "\tMOVQW(%0,%c)\n" mincpu6(29)
+regx: LOADU2(conB)   "\tMOVQW(%0,%c)\n" mincpu6(29)
+regx: LOADP2(conB)   "\tMOVQW(%0,%c)\n" mincpu6(29)
 
 
 
@@ -1049,8 +1079,43 @@ static int if_zpconst(Node p)
 
 static int if_zpglobal(Node p)
 {
-  /* TODO */
+  Symbol s = p->syms[0];
+  if (s && s->type && fnqual(s->type) == NEAR)
+    return 0;
   return LBURG_MAX;
+}
+
+static int if_incr(Node a, int c1, int c2)
+{
+  /* Avoid using the more efficient LDI(c);ADDW(r) over LDW(r);ADDI(c)
+     when value r is likely to be in a freshly assigned vAC. */
+  extern Node head; /* declared in gen.c */
+  Node k = a->kids[0];
+  if (generic(a->op) == ADD &&
+      k && generic(k->op) == INDIR &&
+      k->kids[0] && specific(k->kids[0]->op) == VREG+P)
+    {
+      Node h;
+      int cost = c2;
+      Symbol syma = k->kids[0]->syms[0];
+      if (syma->temporary)
+        for(h = head; h; h = h->link) {
+          if (h->kids[0] == a || h->kids[1] == a)
+            return cost;
+          else if (h->kids[0] == a && generic(h->op) == ARG)
+            return cost;
+          else if (generic(h->op) == ASGN && h->kids[0] &&
+                   h->kids[0]->syms[0] == syma)
+            cost = c1;
+          else if (generic(h->op) == ASGN &&
+                   h->kids[0] && specific(h->kids[0]->op) == VREG+P &&
+                   h->kids[0]->syms[0]->temporary )
+            /* cse temporary might go away */;
+          else
+            cost = c2;
+        }
+    }
+  return c2;
 }
 
 static int sametree(Node p, Node q) {
@@ -1108,6 +1173,63 @@ static int if_cv_from(Node p, int sz, int cost)
   if (p->syms[0]->u.c.v.i == sz)
     return cost;
   return LBURG_MAX;
+}
+
+static Symbol get_target_reg(Node p, int nt)
+{
+  switch (nt) {
+  case _lac_NT:
+    return lreg[31];
+  case _fac_NT:
+    return freg[31];
+  case _eac0_NT: case _ac0_NT: case _eac_NT: case _ac_NT:
+    return ireg[31];
+  case _reg_NT: case _regx_NT:
+    return (p) ? p->syms[RX] : 0;
+  case _rmw_NT:
+    return (p && specific(p->op) == VREG+P) ? p->syms[0] : 0;
+  default:
+    return 0;
+  }
+}
+
+static Symbol get_cnst_or_reg(Node p, int nt)
+{
+  if (p)
+    {
+      p = reuse(p, nt);
+      if (generic(p->op) == CNST || isaddrop(p->op))
+        return p->syms[0];
+      if (generic(p->op) == INDIR && specific(p->kids[0]->op) == VREG+P)
+        return (p->x.inst && p->syms[RX]) ? p->syms[RX] : p->kids[0]->syms[0];
+    }
+  return 0;
+}
+
+static Symbol get_source_sym(Node p, int nt, Node *kids, const short *nts, const char *tpl)
+{
+  const char *etpl;
+  for (; *tpl; tpl++)
+    if (tpl[0]=='%' && tpl[1]=='{' && tpl[2]=='=')
+      break;
+  if (*tpl)
+    for (etpl=tpl+3; *etpl; etpl++)
+      if (*etpl=='}')
+        break;
+  if (*tpl && *etpl) {
+    const char *s;
+    if (tpl[3]=='%' && tpl[4]>='0' && tpl[4]<='9' && tpl[5]=='}')
+      return get_cnst_or_reg(kids[tpl[4]-'0'], nts[tpl[4]-'0']);
+    s = stringn(tpl+3,etpl-tpl-3);
+    if (s == ireg[31]->x.name /* vAC */)
+      return ireg[31];
+    if (s == lreg[31]->x.name /* LAC */)
+      return lreg[31];
+    if (s == freg[31]->x.name /* FAC */)
+      return freg[31];
+    assert(0);
+  }
+  return 0;
 }
 
 static void progend(void)
@@ -1181,7 +1303,7 @@ static Symbol rmap(int opk)
     return 0;
   }
 }
-  
+
 static Symbol argreg(int argno, int ty, int sz, int *roffset)
 {
   Symbol r = 0;
@@ -1254,310 +1376,291 @@ static void clobber(Node p)
   }
 }
 
-
-/* Helper for preralloc */
-static const char *skip_comment_in_template(const char *tpl)
+static void preralloc_scan(Node p, int nt, Symbol sym, int frag,
+                           int *usecount, int *rclobbered)
 {
-  const char *s;
-  for (s = tpl; s && *s; s++) {
-    if (! strncmp(s, "%{#", 3)) {
-      if (! (s = strchr(s, '}')))
-        return tpl;
-    } else if (!isspace(*s))
-      break;
-  }
-  return s;
-}
-
-/* Helper for preralloc */
-static int find_reguse(Node p, int nt, Symbol sym,
-                       const char **lefttpl, int *leftkid, Node *leftkn,
-                       const char **tpl)
-{
-  Node n = p;
-  int rulenum = (*IR->x._rule)(n->x.state, nt);
-  const short *nts = IR->x._nts[rulenum];
-  const char *template = IR->x._templates[rulenum];
-  const char *s;
-  Node kids[10];
-  int leftidx = -1;
-  int count = 0;
-  int i;
-
-  if (tpl)
-    *tpl = template;
-  s = skip_comment_in_template(template);
-  if (s[0] == '%' && isdigit(s[1]))
-    leftidx = s[1] - '0';
-  (*IR->x._kids)(n, rulenum, kids);
-  for (i=0; nts[i] && i<NELEMS(kids); i++)
-    {
-      Node k = kids[i];
-      int knt = nts[i];
-      if (knt == k->x.inst) {
-        if (k->syms[RX] == sym) {
-          count += 1;
-          if (lefttpl && leftidx < 0) {
-            *lefttpl = template;
-            *leftkid = i;
-            *leftkn = k;
-          }
+  if ((p = reuse(p, nt))) {
+    int rulenum = (*IR->x._rule)(p->x.state, nt);
+    const short *nts = IR->x._nts[rulenum];
+    const char *template = IR->x._templates[rulenum];
+    const char *tpl = template;
+    Node kids[10];
+    Symbol t,s;
+    (*IR->x._kids)(p, rulenum, kids);
+    /* Scan template */
+    if (*tpl == '#')
+      return;
+    while(--frag >= 0)
+      while (*tpl && *tpl++ != '|')
+        { }
+    for(; *tpl && *tpl!='|' && !*rclobbered; tpl++)
+      {
+        if (tpl[0]=='%' && tpl[1]=='{' && tpl[2]=='!') {
+          for(tpl=tpl+3; *tpl && *tpl!='|' && *tpl!='}'; tpl++)
+            switch(*tpl) {
+            case '4': if (cpu > 4) break;
+            case '5': if (cpu > 5) break;
+            case 'A': vac_clobbered = 1; break;
+            case 'L': case 'F': xac_clobbered = vac_clobbered = 1; break;
+            default: break;
+            }
+        } else if (tpl[0]=='%' && isdigit(tpl[1])) { /* %0 */
+          Node k = kids[tpl[1]-'0'];
+          int knt = nts[tpl[1]-'0'];
+          k = reuse(k, knt);
+          if (knt == _regx_NT && k->x.inst && k->syms[RX] == sym)
+            *rclobbered = 1; /* a regx nonterminal kills preralloc */
+          else if (k->x.inst != knt)
+            preralloc_scan(k, knt, sym, 0, usecount, rclobbered);
+          else if (k->syms[RX] == sym)
+            *usecount -= 1;
+          tpl += 1;
+        } else if (tpl[0]=='%' && tpl[1]=='['        /* %[0b] */
+                   && isdigit(tpl[2]) && islower(tpl[3])  && tpl[4]==']') {
+          Node k = kids[tpl[2]-'0'];
+          int knt = nts[tpl[2]-'0'];
+          k = reuse(k, knt);
+          if (k->x.inst != knt)
+            preralloc_scan(k, knt, sym, tpl[3]-'a', usecount, rclobbered);
+          tpl += 3;
+        } else if (tpl[0]=='%'&&                    /* %{?...::} assumed != */
+                   tpl[1]=='{' && tpl[2]=='?') {
+          int s = 2;
+          for (tpl=tpl+3; *tpl && *tpl!='}' && *tpl!='|'; tpl++)
+            if (*tpl == ':' && !--s)
+              break;
+        } else if (tpl[0]=='%' && tpl[1]=='{') {    /* %{...} skipped */
+          for (tpl=tpl+2; *tpl && *tpl!='}' && *tpl!='|'; tpl++) /**/;
         }
-      } else if (i == leftidx) {
-        count += find_reguse(k, knt, sym, lefttpl, leftkid, leftkn, 0);
-      } else {
-        count += find_reguse(k, knt, sym, 0, 0, 0, 0);
       }
-    }
-  return count;
-}
-
-/* Helper for preralloc */
-static void change_sym_to_ac(Node p, Symbol sym, Symbol ac)
-{
-  assert(p->syms[RX] == sym);
-  p->syms[RX] = ac;
-  p->x.registered = 1;
-  if (sym->temporary) {
-    Node *q = &sym->x.lastuse;
-    while (*q) {
-      if (*q == p)
-        *q = (*q)->x.prevuse;
-      else
-        q = &(*q)->x.prevuse;
+    /* Process non-terminal clobber */
+    t = get_target_reg(p, nt);
+    s = get_source_sym(p, nt, kids, nts, template);
+    if (s != sym) {
+      if (t == ireg[31])
+        vac_clobbered = 1;
+      else if (t == lreg[31] || t == freg[31])
+        vac_clobbered = xac_clobbered = 1;
     }
   }
-  p->x.prevuse = 0;
-}
-
-/* Helper for preralloc */
-static int scan_ac_preserving_instructions(Symbol sym, Symbol r, Node q, Symbol pr)
-{
-  int count, usecount;
-  const char *lefttpl, *tpl;
-  int leftkid;
-  Node p;
-  /* count temporary variable uses */
-  usecount = -1;
-  for (p = sym->x.lastuse; p; p = p->x.prevuse)
-    usecount += 1;
-  /* scan instructions until finding the last use of sym */
-  for(; ; q = q->x.next)
-    {
-      /* Acceptable instructions here fall in two categories:
-         instructions that leave vAC/LAC/FAC unchanged, and
-         instructions that load sym into vAC/LAC/FAC. Since
-         we do not have the infrastructure to do this generally,
-         we only recognize a couple common cases. */
-      if (! q)
-        return 0;
-      /* Instructions that generate no code */
-      if (generic(q->op)==INDIR && specific(q->kids[0]->op) == VREG+P)
-        /* matches INDIR(VREGP) rule which does not generate code */
-        continue;
-      if (generic(q->op)==ASGN && specific(q->kids[0]->op) == VREG+P
-          && q->kids[1]->x.nt == _reg_NT)
-        /* matches ASGN(VREGP,reg) which does not generate code */
-        continue;
-      /* For instructions that generate code, we start
-         by counting how many times the instruction uses sym
-         and obtaining its template */
-      lefttpl = tpl = 0;
-      count = find_reguse(q, q->x.inst, sym, &lefttpl, &leftkid, &p, &tpl);
-      usecount -= count;
-      if (tpl && count == 0 && !strncmp(tpl, "\t%{#keepsAC}", 12) )
-        /* instruction is known to preseve vAC/LAC/FAC and does not use sym */
-        continue;
-      if (generic(q->op)==LOAD && q->kids[0]->x.inst == _reg_NT
-          && generic(q->kids[0]->op) == INDIR
-          && specific(q->kids[0]->kids[0]->op) == VREG+P
-          && q->kids[0]->kids[0]->syms[0] == sym)
-        /* matches a move instruction whose source is sym */
-        {
-          if (pr && lefttpl && count == 1 && p)
-            change_sym_to_ac(p, sym, pr);
-          if (usecount == 0)
-            /* signal that we've reached the last use of sym */
-            return 1;
-          continue;
-        }
-      /* Next instruction is not known to preserve ac.
-         But its first opcode might be the last use of sym. */
-      if (lefttpl) {
-        char okay = 0;
-        char buf0[16];
-        char buf1[12];
-        char buf2[4];
-        sprintf(buf0,"%%{src!=%s:", r->x.name);
-        sprintf(buf1, "%%{#mov%d}", leftkid);
-        sprintf(buf2, "%%%d", leftkid);
-        if (strstr(lefttpl, buf1))
-          for(; *lefttpl; lefttpl++)
-            if (*lefttpl == ';' && !strstr(lefttpl, buf2)) {
-              /* First opcode is a _MOV[LF] instruction
-                 and no reference to %leftkid follows. */
-              if (count == 1 && usecount == 0)
-                /* signal we've reached the last use of sym */
-                return 1;
-              break;
-            }
-        lefttpl = skip_comment_in_template(lefttpl);
-        if (leftkid == 0 && ! strncmp(lefttpl, buf0, strlen(buf0)))
-          for(; *lefttpl && *lefttpl != '}'; lefttpl++)
-            if (*lefttpl == ';' && !strstr(lefttpl, buf2)) {
-              /* First opcode can be elided
-                 and no reference to %leftkid follows. */
-              if (pr)
-                change_sym_to_ac(p, sym, pr);
-              if (count == 1 && usecount == 0)
-                /* signal we've reached the last use of sym */
-                return 1;
-              break;
-            }
-      }
-      return 0;
-    }
 }
 
 static void preralloc(Node p)
 {
-  Symbol sym = p->syms[RX];
-  int rulenum = (*IR->x._rule)(p->x.state, p->x.inst);
-  short *nts = IR->x._nts[rulenum];
-  const char *template = IR->x._templates[rulenum];
-  Symbol r = 0;
-  Node q = p->x.next;
-  
-  /* Try to eliminate useless data moving operations between
-     successive trees in the same forest, by using vAC/LAC/FAC instead
-     of allocating a temporary register. */
-  Symbol patch = 0;
-  if (strstr(template,"%{#alsoVAC}"))
-    patch = r = ireg[31];
-  else if (strstr(template,"%{#alsoLAC}"))
-    patch = r = lreg[31];
-  else if (strstr(template,"%{#alsoFAC}"))
-    patch = r = freg[31];
-  else if (sym->temporary && strstr(template,"%{#canVAC}"))
-    r = ireg[31];
-  if (r && q && generic(q->op) == ASGN && q->kids[0]->op == VREG+P)
+  if (p->x.inst == _reg_NT)
     {
-      /* in order to use vAC/LAC/FAC instead of a temporary register,
-         we must be sure that the value of vAC/LAC/FAC is unchanged
-         whenever the code needs it.*/
-      if (scan_ac_preserving_instructions(sym, r, q->x.next, patch)
-          && sym->temporary)
+      Node q;
+      int usecount = -1;
+      Symbol sym = p->syms[RX];
+      if (sym->temporary)
+        for (q = sym->x.lastuse; q; q = q->x.prevuse)
+          usecount += 1;
+      if (usecount > 0)
         {
-          /* optimize the temporary out of existence because 
-             we have reached its last use. */
-          r->x.lastuse = sym->x.lastuse;
-          for (q = sym->x.lastuse; q; q = q->x.prevuse) {
-            q->syms[RX] = r;
-            q->x.registered = 1;
+          /* Determine accumulator */
+          Symbol r = ireg[31];
+          int *rclobbered = &xac_clobbered;
+          if (optype(p->op) == FLOAT)
+            r = freg[31];
+          else if (opsize(p->op) == 4)
+            r = lreg[31];
+          if (r == ireg[31])
+            rclobbered = &vac_clobbered;
+          /* Hack because moves to/from FAC are costly */
+          if (r == freg[31] && usecount > 1)
+            return;
+          /* Search for references to sym until accumulator clobbered */
+          *rclobbered = 0;
+          for (q=p->x.next; q && usecount>0 && !*rclobbered; q = q->x.next)
+            preralloc_scan(q, q->x.inst, sym, 0, &usecount, rclobbered);
+          /* Did we find all uses of sym? */
+          if (! usecount) {
+            /* Optimize temporary sym out of existence */
+            r->x.lastuse = sym->x.lastuse;
+            for (q = sym->x.lastuse; q; q = q->x.prevuse) {
+              q->syms[RX] = r;
+              q->x.registered = 1;
+            }
           }
         }
     }
 }
 
-static void myemitfmt(const char *fmt, Node p, Node *kids, short *nts)
+static void emitfmt2(const char *template, int len,
+                     Node p, int nt, Node *kids, short *nts)
 {
   /* Enhancements of emitfmt with respect to the original version:
-
      - delegates %{...} delegates to the IR function emit3(),
        which can call emitasm/emitfmt() recursively.
-
      - Templates might be split in sections with |. Writing $0 to $9
        only prints the first section of the specified kid template.
        The other sections can be accessed with syntax $[0b] where '0'
-       is the kid number and 'b' is a letter indicating 
-       which section to process. 
+       is the kid number and 'b' is a letter indicating
+       which section to process.
   */
+  const char *fmt = template;
   static int alt_s;
   int s = alt_s;
   alt_s = 0;
-  for (; *fmt; fmt++)
+  for (; len > 0 && *fmt; fmt++, len--)
     if (*fmt == '|' && s == 0)
       break;
     else if (*fmt == '|')
       s -= 1;
     else if (s > 0)
       continue;
-    else if (*fmt != '%')
+    else if (*fmt != '%' || len <= 1)
       (void)putchar(*fmt);
-    else if (*++fmt == 'F')                                   /* %F */
+    else if (--len && *++fmt == 'F')                          /* %F */
       print("%d", framesize);
     else if (*fmt >= 'a' && *fmt < 'a' + NELEMS(p->syms))     /* %a..%c */
       fputs(p->syms[*fmt - 'a']->x.name, stdout);
     else if (*fmt >= '0' && *fmt <= '9')                      /* %0..%9 */
       emitasm(kids[*fmt - '0'], nts[*fmt - '0']);
-    else if (*fmt == '[' && fmt[3] == ']' && fmt[1]>='0' && fmt[1]<='9'
+    else if (len>3 && fmt[0] == '[' && fmt[3] == ']'
+             && fmt[1] >= '0' && fmt[1] <= '9'
              && fmt[2] >= 'a' && fmt[2] <= 'z') {      /* %[0a] */
+      alt_s = fmt[2] - 'a';
+      emitasm(kids[fmt[1] - '0'], nts[fmt[1] - '0']);
       fmt += 3;
-      alt_s = fmt[-1] - 'a';
-      emitasm(kids[fmt[-2] - '0'], nts[fmt[-2] - '0']);
+      len -= 3;
       alt_s = 0;
     } else if (*fmt == '{') {
+      int i;
       int level = 0;
       const char *s;
-      for (s=fmt++; *s; s++)
-        if (*s=='{')
+      for (i=0; i < len; i++)
+        if (fmt[i] == '{')
           level += 1;
-        else if (*s=='}' && !--level)
+        else if (fmt[i] == '}' && !--level)
           break;
       assert(!level);
-      emit3(stringn(fmt, s-fmt), p, kids, nts);
-      fmt = s;
+      emit3(fmt+1, i-1, p, nt, kids, nts);
+      fmt += i;
+      len -= i;
     } else
       (void)putchar(*fmt);
+  /* clobber information deduced from nonterminal */
+  if (!fmt[len]) {
+    Symbol t = get_target_reg(p, nt);
+    Symbol s = get_source_sym(p, nt, kids, nts, template);
+    if (t == ireg[31] /*vAC*/) {
+      vac_clobbered = 1;
+      vac_equiv = 0;
+      vac_constval = 0;
+      if (s && !s->x.regnode)
+        vac_constval = s;
+      else if (s && s->x.regnode && s->x.regnode->number < 24)
+        vac_equiv = (1 << s->x.regnode->number);
+    } else if (t == lreg[31] /*LAC*/) {
+      vac_clobbered = xac_clobbered = 1;
+      vac_equiv = lac_equiv = fac_equiv = 0;
+      vac_constval = 0;
+      if (s && s->x.regnode && s->x.regnode->number < 24)
+        lac_equiv = (1 << s->x.regnode->number);
+    } else if (t == freg[31] /*FAC*/) {
+      vac_clobbered = xac_clobbered = 1;
+      vac_equiv = lac_equiv = fac_equiv = 0;
+      vac_constval = 0;
+      if (s && s->x.regnode && s->x.regnode->number < 24)
+        fac_equiv = (1 << s->x.regnode->number);
+    } else if (t && t->x.regnode) {
+      if (s == ireg[31] && t->x.regnode->number < 24)
+        vac_equiv |= (1 << t->x.regnode->number);
+      else if (s == lreg[31] && t->x.regnode->number < 24)
+        lac_equiv |= (1 << t->x.regnode->number);
+      else if (s == freg[31] && t->x.regnode->number < 24)
+        fac_equiv |= (1 << t->x.regnode->number);
+      else {
+        vac_equiv &= ~t->x.regnode->mask;
+        lac_equiv &= ~t->x.regnode->mask;
+        fac_equiv &= ~t->x.regnode->mask;
+      }
+    }
+  }
 }
 
-static void emit3(const char *fmt, Node p, Node *kids, short *nts)
+static void emitfmt1(const char *fmt, Node p, int nt, Node *kids, short *nts)
+{
+  emitfmt2(fmt, strlen(fmt), p, nt, kids, nts);
+}
+
+static void emit3(const char *fmt, int len, Node p, int nt, Node *kids, short *nts)
 {
   int i = 0;
-  /* %{#COMMENT} -- comment [nothing emitted]  */
-  if (fmt[0]=='#')
+  /* Annotations %{!xxx} */
+  if (len > 0 && fmt[0] == '!')
     {
-      /* This is mostly used to help preralloc.
-         %{#keepsAC} : instruction preserves vAC/LAC/FAC.
-         %{#alsoVAC} : contents of destination reg is also left in vAC.
-         %{#alsoLAC} : contents of destination reg is also left in LAC.
-         %{#alsoFAC} : contents of destination reg is also left in FAC.
-         %{#canVAC}  : destination reg could be vAC.
-         %{#movN}    : _MOVx instruction with source register %N. */
+      for (int i=1; i<len; i++)
+        switch(fmt[i]) {
+        case '4': if (cpu <= 4) goto xvac; break;
+        case '5': if (cpu <= 5) goto xvac; break;
+        case 'A': goto xvac;
+        case 'L': case 'F':
+          xac_clobbered = 1;
+          lac_equiv = fac_equiv = 0;
+        xvac:
+          vac_clobbered = 1;
+          vac_constval = 0;
+          vac_equiv = 0;
+        default:
+          break;
+        }
       return;
     }
-  while (fmt[i] && fmt[i++] != ':')
-    { }
-  /* %{dst!=XXX:YYY} */
-  if (!strncmp(fmt,"dst!=",5) && fmt[i])
+  /* Annotations %{=xxx} are processed elsewhere */
+  if (len > 0 && fmt[0] == '=')
+    return;
+  /* %{?[0-9a-c]==...:ifeq:ifne} */
+  /* %{?[0-9a-c]=~xAC:ifeq:ifne} */
+  if (len > 3 && fmt[0] == '?' && fmt[2] == '='
+      && (fmt[3] == '=' || fmt[3] == '~') )
     {
-      if (p->syms[RX]->x.name != stringn(fmt+5,i-6))
-        myemitfmt(fmt+i, p, kids, nts);
-      return;
+      int ifeq, ifne;
+      for (ifeq=4; ifeq<len; ifeq++)
+        if (fmt[ifeq] == ':')
+          break;
+      for (ifne=ifeq+1; ifne<len; ifne++)
+        if (fmt[ifne] == ':')
+          break;
+      if (ifeq < len)
+        {
+          int eq = 0;
+          Symbol sym = 0;
+          const char *cmp  = stringn(fmt+4,ifeq-4);
+          if (fmt[1] >= 'a' && fmt[1] <= 'c')
+            sym = p->syms[fmt[1]-'a'];
+          else if (fmt[1] >= '0' && fmt[1] <= '9')
+            sym = get_cnst_or_reg(kids[fmt[1]-'0'], nts[fmt[1]-'0']);
+          if (sym && sym->x.name == cmp)
+            eq = 1;
+          else if (fmt[3] == '=')
+            eq = 0; /* literal comparison */
+          else if (sym && cmp == ireg[31]->x.name /* vAC */
+                   && !sym->x.regnode && vac_constval
+                   && vac_constval->x.name == sym->x.name )
+            eq = 1;
+          else if (sym && cmp == ireg[31]->x.name /* vAC */
+                   && sym->x.regnode && sym->x.regnode->number < 24
+                   && (vac_equiv & (1 << sym->x.regnode->number)) )
+            eq = 1;
+          else if (sym && cmp == lreg[31]->x.name /* LAC */
+                   && sym->x.regnode && sym->x.regnode->number < 24
+                   && (lac_equiv & (1 << sym->x.regnode->number)) )
+            eq = 1;
+          else if (sym && cmp == freg[31]->x.name /* FAC */
+                   && sym->x.regnode && sym->x.regnode->number < 24
+                   && (fac_equiv & (1 << sym->x.regnode->number)) )
+            eq = 1;
+          if (eq)
+            emitfmt2(fmt+ifeq+1, ifne-ifeq-1, p, nt, kids, nts);
+          else if (ifne < len)
+            emitfmt2(fmt+ifne+1, len-ifne-1, p, nt, kids, nts);
+          return;
+        }
     }
-  /* %{src!=XXX:YYY} */
-  else if (!strncmp(fmt,"src!=", 5) && fmt[i])
-    {
-      if (!kids[0] || !kids[0]->syms[RX] || kids[0]->syms[RX]->x.name != stringn(fmt+5,i-6))
-        myemitfmt(fmt+i, p, kids, nts);
-      return;
-    }
-  /* %{dst==XXX:YYY} */
-  if (!strncmp(fmt,"dst==",5) && fmt[i])
-    {
-      if (p->syms[RX]->x.name == stringn(fmt+5,i-6))
-        myemitfmt(fmt+i, p, kids, nts);
-      return;
-    }
-  /* %{src==XXX:YYY} */
-  else if (!strncmp(fmt,"src==", 5) && fmt[i])
-    {
-      if (kids[0] && kids[0]->syms[RX] && kids[0]->syms[RX]->x.name == stringn(fmt+5,i-6))
-        myemitfmt(fmt+i, p, kids, nts);
-      return;
-    }
-  /* %{mulC[:R]} -- multiplication by a small constant */
-  else if (!strncmp(fmt,"mul", 3) && fmt[3] >= '0' && fmt[3] <= '9')
+  /* %{mulC[%R]} -- multiplication by a small constant */
+  else if (len >= 4 && !strncmp(fmt, "mul", 3) && fmt[3] >= '0' && fmt[3] <= '9')
     {
       int c;
       Node k;
@@ -1570,8 +1673,8 @@ static void emit3(const char *fmt, Node p, Node *kids, short *nts)
           k = k->syms[2]->u.t.cse;
       assert(k->syms[0] && k->syms[0]->scope == CONSTANTS);
       c = k->syms[0]->u.c.v.i;
-      if (fmt[4]) {
-        assert(fmt[4]=='%' && fmt[5]>='0' && fmt[5]<='9' && !fmt[6]);
+      if (len > 4) {
+        assert(fmt[4]=='%' && fmt[5]>='0' && fmt[5]<='9' && len==6);
         assert(kids[fmt[5]-'0'] && kids[fmt[5]-'0']->syms[RX]);
         r = kids[fmt[5]-'0']->syms[RX]->x.name;
       }
@@ -1583,9 +1686,9 @@ static void emit3(const char *fmt, Node p, Node *kids, short *nts)
         assert(x>=0 && x<256);
         while (m && !(m & x))
           m >>= 1;
-        if (fmt[4] && c < 0)
+        if (len > 4 && c < 0)
           print("LDI(0);SUBW(%s);", r);
-        else if (fmt[4])
+        else if (len > 4)
           print("LDW(%s);", r);
         else if (c < 0)
           print("STW(T3);LDI(0);SUBW(T3);");
@@ -1607,7 +1710,7 @@ static void doarg(Node p)
 {
   /* Important change in arg passing:
      - When calling a function, all arguments beyond
-       those specified in the prototype are written to the stack 
+       those specified in the prototype are written to the stack
        in addition to being possibly passed in registers.
        In particular this happens for all arguments
        when calling a non prototyped function,
@@ -1769,6 +1872,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls)
     print("\n");
   }
   /* Emit actual code */
+  vac_constval = 0;
+  vac_equiv = lac_equiv = fac_equiv = 0;
   emitcode();
   /* Epilogue */
   if (framesize == 0) {
@@ -1794,7 +1899,7 @@ static void defconst(int suffix, int size, Value v)
     mantissa = (unsigned long)(frexp(fabs(d),&exp) * 4294967296.0 + 0.4999999995343387);
     if (exp < -127)
       mantissa = 0;
-    if (mantissa == 0) 
+    if (mantissa == 0)
       xprint("\tbytes(0,0,0,0,0);");
     else if (exp > 127)
       error("floating point constant overflow\n");
@@ -1805,12 +1910,12 @@ static void defconst(int suffix, int size, Value v)
     xprint(" # %g\n", d);
   } else {
     unsigned long x = (suffix == P) ? (unsigned)(size_t)v.p : (suffix == I) ? v.i : v.u;
-    if (size == 1) 
-      print("\tbytes(%d);", x&0xff);
+    if (size == 1)
+      xprint("\tbytes(%d);", x&0xff);
     else if (size == 2)
-      print("\twords(%d);", x&0xffff);
+      xprint("\twords(%d);", x&0xffff);
     else if (size == 4)
-      print("\twords(%d,%d);", x&0xffff, (x>>16)&0xffff);
+      xprint("\twords(%d,%d);", x&0xffff, (x>>16)&0xffff);
     if (suffix == I)
       xprint(" # %D", (long)x);
     else if (suffix == U)
@@ -1859,9 +1964,14 @@ static void defsymbol(Symbol p)
 
 static void address(Symbol q, Symbol p, long n)
 {
-  if (p->scope == GLOBAL || p->sclass == STATIC || p->sclass == EXTERN)
+  if (p->scope == GLOBAL || p->sclass == STATIC || p->sclass == EXTERN) {
+    Type ty0 = p->type;
+    Type ty1 = q->type;
     q->x.name = stringf("v(%s)%s%D", p->x.name, n >= 0 ? "+" : "", n);
-  else {
+    if (ty0 && fnqual(ty0) == NEAR && n >= 0 && n < ty0->size)
+      if (ty1 && !fnqual(ty1))
+        q->type = qual(NEAR, ty1);
+  } else {
     assert(n <= INT_MAX && n >= INT_MIN);
     q->x.offset = p->x.offset + n;
     q->x.name = stringd(q->x.offset);
@@ -1870,18 +1980,24 @@ static void address(Symbol q, Symbol p, long n)
 
 static void global(Symbol p)
 {
+  int isnear = fnqual(p->type) == NEAR;
   unsigned int size = p->type->size;
+  unsigned int align = (isnear) ? 1 : p->type->align;
   const char *s = segname();
-  if (p->u.seg == BSS && p->sclass != STATIC)
+  const char *n;
+  if (p->u.seg == BSS && p->sclass != STATIC && !isnear)
     s = "COMMON";
   if (p->u.seg == LIT)
     size = 0; /* unreliable in switch tables */
   lprint("('%s', %s, code%d, %d, %d)",
-          s, p->x.name, codenum, size, p->type->align);
-  xprint("# ======== %s\n", lhead.prev->s);
+          s, p->x.name, codenum, size, align);
+  n = lhead.prev->s;
+  if (isnear)
+    lprint("('PLACE', %s, 0x00, 0xff)", p->x.name);
+  xprint("# ======== %s\n", n);
   xprint("def code%d():\n", codenum++);
-  if (p->type->align > 1)
-    xprint("\talign(%d);\n", p->type->align);
+  if (align > 1)
+    xprint("\talign(%d);\n", align);
   xprint("\tlabel(%s);\n", p->x.name);
   if (p->u.seg == BSS)
     xprint("\tspace(%d);\n", p->type->size);
@@ -1950,7 +2066,7 @@ Interface gigatronIR = {
           _isinstruction,
           _ntname,
           emit2,
-          myemitfmt,
+          emitfmt1,
           doarg,
           target,
           clobber,

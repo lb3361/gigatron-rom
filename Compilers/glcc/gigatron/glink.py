@@ -434,20 +434,25 @@ def emit_prefx3(opcode, arg1, arg2):
 
 zpage_map = [ None for i in range(0,256) ]
 
-def zpage_reserve(rng, lbl):
+def zpage_reserve(rng, lbl, error_on_conflict=True):
     for i in rng:
         if i < 0 or i >= 256:
             fatal(f"Cannot reserve address {hex(i)} in page zero")
         elif zpage_map[i] and zpage_map[i] != lbl:
-            fatal(f"Zero page address {hex(i)} is both {zpage_map[i]} and {lbl}")
-        zpage_map[i] = lbl
+            if error_on_conflict:
+                fatal(f"Zero page address {hex(i)} is both {zpage_map[i]} and {lbl}")
+        else:
+            zpage_map[i] = lbl
 
 def create_zpage_map():
     zpage_reserve(range(0,0x30), "ROMVAR")
-    if 'has_vIRQ' in rominfo: zpage_reserve(range(0x30,0x35), "VIRQ")
     zpage_reserve(range(0x80,0x81), "ROMVAR")
     zpage_reserve(range(0xc0,0xd0), "RUNTIME")
     zpage_reserve(range(0xd0,0x100), "STACK")
+    if 'has_vIRQ' in rominfo:
+        zpage_reserve(range(0x30,0x36), "VIRQ") # saving vCpuSelect
+    if romtype == 0x38:                         # ctrlBits in ROMv4
+        zpage_reserve(range(0x81,0x82), "ROMVAR")
 
 def create_zpage_segments():
     segs = []
@@ -571,7 +576,8 @@ def genlabel():
 
 @vasm
 def zpReserve(addr0,addr1,lbl):
-    zpage_reserve(range(addr0,addr1+1),lbl)
+    if the_pass == 0:
+        zpage_reserve(range(addr0,addr1+1),lbl)
 @vasm
 def pc():
     return the_pc
@@ -1841,7 +1847,8 @@ def _LCMPU():
 @vasm
 def _LCMPX():
     if args.cpu >= 6:
-        XORLP()
+        # keep LAC unchanged!
+        CMPLPU() 
     else:
         extern('_@_lcmpx')
         _CALLI('_@_lcmpx')      # TST(LAC-[vAC]) --> vAC
@@ -2367,6 +2374,8 @@ def find_code_segment(size):
     for (i,s) in enumerate(segment_list):
         if amin == None and s.flags & 0x1:  # not a code segment
             continue
+        if amin and amax and amin < 0x100 and amax >= 0x100:
+            amin = 0x100                    # do not place code in page zero
         addr = s.pc
         if amin != None and amin > s.pc:
             addr = amin
@@ -2403,14 +2412,16 @@ def find_code_segment(size):
     # not found
     return None
 
-def assemble_code_fragments(m, placed=False):
+def assemble_code_fragments(m, placed=False, absolute=False):
     global the_module, the_fragment, the_segment, the_pc
     global hops_enabled, short_function
     the_module = m
     for frag in m.code:
         the_fragment = frag
         if frag.segment == 'CODE':
-            if bool(frag.amin and not frag.amax) != bool(placed):
+            if bool(frag.amin) != bool(placed):
+                continue
+            if placed and bool(frag.amax) == absolute:
                 continue
             funcsize = frag.size
             the_segment = None
@@ -2482,9 +2493,11 @@ def run_pass():
         segment_list.append(Segment(s,e,d))
     debug(f"pass {the_pass}")
     try:
-        # code segments with explicit address
+        # code segments with explicit address or placement constraints
         for m in module_list:
-            assemble_code_fragments(m, placed=True)
+            assemble_code_fragments(m, placed=True, absolute=True)
+        for m in module_list:
+            assemble_code_fragments(m, placed=True, absolute=False)
         # remaining code segments
         for m in module_list:
             assemble_code_fragments(m, placed=False)
@@ -2670,8 +2683,9 @@ def print_fragments():
             if nparts > 1:
                 name = name + f" ({part}/{nparts})"
         plen = rng[1] - rng[0]
-        blen = f"({plen} byte{'s' if plen > 1 else ''})"
-        print(f"\t{rng[0]:04x}-{rng[1]-1:04x} {blen:<14s} {cseg:<5s} {name:<28s} {m.fname:<22s}")
+        if plen > 0:
+            blen = f"({plen} byte{'s' if plen > 1 else ''})"
+            print(f"\t{rng[0]:04x}-{rng[1]-1:04x} {blen:<14s} {cseg:<5s} {name:<28s} {m.fname:<22s}")
 
     
 # ------------- main function
