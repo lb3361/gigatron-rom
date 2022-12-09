@@ -178,6 +178,7 @@ namespace Loader
 
             // Reserve space taking into account ONE_CONST_ADDRESS
             page0._loAddress = start;
+            page0._hiAddress = 0;
             page0._segmentSize = end - start + 1;
             page0._dataBytes.resize(end - start + 1, 0x00);
             if(start <= ONE_CONST_ADDRESS && end >= ONE_CONST_ADDRESS) page0._dataBytes[ONE_CONST_ADDRESS-start] = 0x01;
