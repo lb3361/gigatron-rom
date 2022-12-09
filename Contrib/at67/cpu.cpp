@@ -507,6 +507,7 @@ namespace Cpu
             case ROMv3: 
             case ROMv4:
             case ROMv5a:
+            case ROMv6:
             case SDCARD:
             case DEVROM:
             {
