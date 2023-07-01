@@ -1,6 +1,6 @@
 
 
-# GLCC
+# GLCC  2.0
 
 
 This LCC--derived compiler and C library targets the [Gigatron](http://gigatron.io) VCPU.
@@ -21,7 +21,8 @@ Some useful things to know:
   * Types `short` and `int` are 16 bits long.  Type `long` is 32 bits
 	long. Types `float` and `double` are 40 bits long, using the
 	Microsoft Basic floating point format. Both long arithmetic or
-	floating point arithmetic incur a significant speed penalty.
+	floating point arithmetic incur a substantial speed penalty, 
+	vastly improved with the dev7 rom.
 	
   * Type `char` is unsigned by default. This is more efficient because
 	the C language always promotes `char` values into `int` values to
@@ -219,27 +220,31 @@ are documented by typing `glink -h`
 	the indicated rom version. The default is `v5a` which does not
 	provide much support at this point.
 	
-  * Option `-cpu=[456]` indicates which VCPU version should be
+  * Option `-cpu=[4567]` indicates which VCPU version should be
     targeted.  Version 5 adds the instructions `CALLI`, `CMPHS` and
-    `CMPHU` that came with ROMv5a. Version 6 will support AT67's new
-    instruction once finalized. The default CPU is the one implemented
-    by the selected ROM.
+    `CMPHU` that came with ROMv5a. Version 6, which comes with ROMvX0,
+    is not a strict supersed of version 6 because it changes the 
+    encodings of CMPHS/CMPHU. Version 7, which comes with DEV7ROM 
+    is a strict superset of version 5. Version 6 and 7 are mutually
+    incompatible. GLCC offers primary support for version 7 but can
+    generate version 6 encodings for some of its instructions.
+    The default CPU is the one implemented by the selected ROM.
 
   * Option `-map=<memorymap>{,<overlay>}` is also passed to the linker
     and specifya memory layout for the generated code. The default
     map, `32k` uses all little bits of memory available on a 32KB
     Gigatron, starting with the video memory holes `[0x?a0-0x?ff]`,
-    the low memory `[0x200-0x6ff]`. There is also a `64k` map and a
-    `conx` map which uses a reduced console to save memory.
+    the low memory `[0x200-0x6ff]`. There is also a `64k` map, a `128k` map, 
+    and a `conx` map which uses a reduced console to save memory.
     Additional information about each map can be displayed by 
     using option `-info` as in `glcc -map=sim -info`
 	
     Maps can also manipulate the linker arguments, insert libraries,
-	and define the initialization function that checks the rom type
-	and the ram configuration. For instance, map `sim` produces gt1
-	files that only run in the emulator [`gtsim`](gigatron/mapsim) with a
-	library that redirects `printf` and all standard i/o functions to
-	the emulator itself. This is my main debugging tool.
+    and define the initialization function that checks the rom type
+    and the ram configuration. For instance, map `sim` produces gt1
+    files that only run in the emulator [`gtsim`](gigatron/mapsim),
+    redirecting `printf` and all standard i/o functions to
+    the emulator itself. This is my main debugging tool.
 	
 
 ## 3. Examples
@@ -267,68 +272,7 @@ $ ./build/gtsim -rom gigatron/roms/dev.rom a.gt1
 ...
 ```
 
-### 3.2. Capturing signals:
-```
-$ cat gigatron/libc/tst/TSTsignal.c 
-#include <string.h>
-#include <stdio.h>
-#include <signal.h>
-
-int a = 3;
-long b = 323421L;
-volatile int vblcount = 0;
-extern char frameCount;
-
-int handler(int signo, int fpeinfo)
-{
-	printf("handle %d %d\n", signo, fpeinfo);
-	return 1234;
-}
-
-long lhandler(int signo, int fpeinfo)
-{
-	printf("handle %d %d\n", signo, fpeinfo);
-	return 1234L;
-}
-
-void vhandler(int signo)
-{
-	printf("SIGVIRQ(%d): count=%d\n", signo, vblcount++);
-	frameCount=255;
-	signal(SIGVIRQ, vhandler);
-}
-
-int main()
-{
-	signal(SIGFPE, (sig_handler_t)handler);
-	printf("%d/0 = %d\n", a, a / 0);
-	signal(SIGFPE, (sig_handler_t)lhandler);
-	printf("%ld/0 = %ld\n", b , b / 0);
-	signal(SIGVIRQ, vhandler);
-	while (vblcount < 10) { 
-		b = b * b;
-	}
-	return 0;
-}
-$ ./build/glcc -map=sim  gigatron/libc/tst/TSTsignal.c 
-$ ./build/gtsim  -rom gigatron/roms/dev.rom a.gt1 
-handle 4 1
-3/0 = 1234
-handle 4 1
-323421/0 = 1234
-SIGVIRQ(7): count=0
-SIGVIRQ(7): count=1
-SIGVIRQ(7): count=2
-SIGVIRQ(7): count=3
-SIGVIRQ(7): count=4
-SIGVIRQ(7): count=5
-SIGVIRQ(7): count=6
-SIGVIRQ(7): count=7
-SIGVIRQ(7): count=8
-SIGVIRQ(7): count=9
-```
-
-### 3.3. Running Marcel's simple chess program:
+### 3.2. Running Marcel's simple chess program in gtsim:
 
 I found this program when studying the previous incarnation 
 of LCC for the Gigatron, with old forums posts where Marcel
@@ -340,14 +284,14 @@ but this is not enough. One could think about using
 the 128KB memory extention but this will require a lot
 of changes to the code. In the mean time. we can
 run it with the `gtsim` emulator which has no screen
-but can forward stdio...
+but can forward stdio.
 
 ```
-$ cp stuff/mscp.c .
-$ cp stuff/book.txt .
+$ cp stuff/mscp/mscp0.c .
+$ cp stuff/mscp/book.txt .
 
 # Using map sim with overlay allout commits all the memory
-$ ./build/glcc -map=sim,allout mscp.c -o mscp.gt1
+$ ./build/glcc -map=sim,allout mscp0.c -o mscp0.gt1
 ```
 
 Now we can run it. Option -f in `gtsim` allows mscp to 
@@ -355,7 +299,7 @@ open and read the opening book file `book.txt`.
 Be patient...
 
 ```
-$ ./build/gtsim -f -rom gigatron/roms/dev.rom  mscp.gt1 
+$ ./build/gtsim -f -rom gigatron/roms/dev.rom mscp0.gt1
 
 This is MSCP 1.4 (Marcel's Simple Chess Program)
 
@@ -375,24 +319,6 @@ Type 'help' for a list of commands
 1  R N B Q K B N R
    a b c d e f g h
 1. White to move. KQkq 
-Compacted book 256 -> 57
-Compacted book 256 -> 94
-Compacted book 256 -> 131
-Compacted book 256 -> 155
-Compacted book 256 -> 171
-Compacted book 256 -> 182
-Compacted book 256 -> 194
-Compacted book 256 -> 204
-Compacted book 256 -> 216
-Compacted book 256 -> 231
-Compacted book 256 -> 231
-Compacted book 256 -> 242
-Compacted book 256 -> 247
-Compacted book 256 -> 251
-Compacted book 256 -> 253
-Compacted book 256 -> 253
-Compacted book 256 -> 256
-Compacted book 256 -> 256
 mscp> 
 ```
 
@@ -422,27 +348,34 @@ But it plays!
 
 ## 4. Internals
 
-The code generator uses two block of respectively 16 and 48 bytes in page zero.
+The code generator uses several blocks of page zero variables.
+The linker knows the page zero usage of each rom and keeps 
+track of all free and used page zero locations.
 
-  *  The first block is dedicated to runtime routines that implement
-	 long and float arithmetic. It is located at fixed addresses `0xc0-0xcf`
-	 because it is expected that runtime support will be progressively
-	 supported by ROM features. The long accumulator `LAC` occupies
-	 addresses `0xc4-0xc7`. The float accumulator `FAC` overlaps `LAC` and
-	 uses locations `0xc0-0xc7`. The remaining eight bytes at `0xc8-0xcf`
-     are working space for these runtime routines. They are also known as
-     registers `T0` to `T3` and are occasionally used as scratch
-     registers by the code generator.
-     
-  *  The second block contains 24 general purpose word registers named
-     `R0` to `R23`. This block is by default located at addresses
-     `0x50-0x7f` but can be displaced using the command line option
+  *  The most important block of page zero variables contains 24
+     general purpose word registers named `R0` to `R23`. This block is
+     can be manually displaced using the command line option
      `--register-base=0x90` for instance. Register pairs named `L0` to
      `L22` can hold longs.  Register triplets named `F0` to `F21` can
      hold floats. Registers `R0` to `R7` are callee-saved and are
      often used for local variables. Registers `R8` to `R15` are used
      to pass arguments to functions. Registers `R15` to `R22` are used
-     for temporaries. Register `R23` or `SP` is the stack pointer.
+     for temporaries.
+
+  *  Additional registers include: word registers named `T0` to `T3`,
+     scratch bytes `B0` and `B1`, long accumulator `LAC`, long 
+     accumulator extension byte `LAX`, floating point sign and
+     exponent bytes `FAS` and `FAE`, and a stack pointer `SP`. ROMs
+     that provide suitable native support may dictate the location
+     some of these registers. Otherwise they are allocated by the
+     linker in the upper half ot page zero. In general, these
+     locations, as well as `sysArgs[0..7]`, can be used by the 
+     compiler or the runtime, and therefore are not safe to use
+     from C programs. 
+
+   * Since the DEV7 rom offers a true 16 bits stack pointer, GLCC-2.0
+     makes `SP` equal to `vSP`, allowing the use of efficient opcodes
+     to access non-register local variables.
 
 The function prologue first saves `vLR` and constructs a stack frame
 by adjusting `SP`. It then saves the callee-saved registers onto the
@@ -456,9 +389,7 @@ last resort, often avoiding the construction of a stack-frame.
 Leaf functions that do not need to allocate space on the
 stack can use a register to save VLR and become entirely frameless.
 Sometimes one can help this by using `register` when declaring local
-variables.
-
-Saving `vLR` allows us to use `CALLI` as a long jump
+variables. Saving `vLR` allows us to use `CALLI` as a long jump
 without fearing to erase the function return address.
 This is especially useful when one needs to hop over page boundaries.
 
@@ -476,10 +407,13 @@ various parts of a typical CPU instruction such as the mnemonic,
 the address mode, etc. The VCPU accumulator `vAC` is treated as a scratch 
 register inside a burst. Meanwhile LCC allocates zero page registers 
 to pass data across bursts. This approach avoid the spilling problems
-but sometimes needs improving because we do not keep track
+but sometimes needs improving because it does not keep track
 of what data is left on the accumulator after each burst.
-This has been improved by adding code that opportunistically
-allows using `vAC` to pass data between bursts.
+This has been improved by a `preralloc` pass that tries to eliminate
+temporaries that can be passed through vAC, and by a state machine
+in the instruction emitter which conservatively maintains assertions
+about register or accumulator equality which can be used to
+simplify the code.
 
 The compiler produces a python file that first define a function for each
 code or data fragment. The file then constructs a module that

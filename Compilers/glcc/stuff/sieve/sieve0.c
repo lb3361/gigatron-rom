@@ -3,9 +3,14 @@
 #include <gigatron/libc.h>
 #include <time.h>
 
-#define TIMER 1
+#ifndef TIMER
+# define TIMER 1
+#endif
+#ifndef PRINT
+# define PRINT 1
+#endif
 
-/** This is the genuine C program of the sieve benchmark.
+/** This is the pristine C program of the sieve benchmark.
     The only additions are the #include directives above
     and the timing code enabled by the preprocessor symbol TIMER. **/
 
@@ -19,13 +24,8 @@ main() {
 #if TIMER
     unsigned int ticks = _clock();
 #endif
+#if PRINT
     printf("10 iterations\n");
-#ifdef MODE
-# if MODE == 4
-    videoTop_v5 = 238;
-# else
-    SYS_SetMode(MODE);
-# endif
 #endif
     for (iter = 1; iter <= 10; iter ++) {
         count=0 ; 
@@ -35,7 +35,7 @@ main() {
 	    if (flags[i]) {
                 prime = i + i + 3; 
                 k = i + prime; 
-                while (k <= size) { 
+                while (k <= size) {
                     flags[k] = false; 
                     k += prime; 
                 }
@@ -43,14 +43,9 @@ main() {
             }
         }
     }
-#ifdef MODE
-# if MODE == 4
-    videoTop_v5 = 0;
-# else
-    SYS_SetMode(-1);
-# endif
-#endif
+#if PRINT
     printf("\n%d primes", count);
+#endif
 #if TIMER
     ticks = _clock() - ticks;
     printf("\n%d %d/60 seconds", ticks/60, ticks % 60);
