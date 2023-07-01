@@ -2,33 +2,16 @@
 def scope():
 
     # ----------------------------------------
-    # Extra definitions
-
-    def code_sysdefs():
-        nohop()
-        label("ctrlBits_v5", 0x1f8)   # may not be defined in interface.json
-
-    module(name='sysdefs.s',
-           code=[('EXPORT', 'ctrlBits_v5'),
-                 ('CODE', 'sysdefs', code_sysdefs) ] )
+    # Channel access function
 
     def code_channel():
-        label("channel1", 0x1fa)      # different from interface.json (0x100)
-        label("channel2", 0x2fa)      # different from interface.json (0x200)
-        label("channel3", 0x3fa)      # different from interface.json (0x300)
-        label("channel4", 0x4fa)      # different from interface.json (0x400)
         nohop()
         label('channel')
         LD(R8);ST(vACH);ORI(0xff);XORI(5);RET()  # nine bytes
 
-    module(name='channel.s',
+        module(name='channel.s',
            code=[('EXPORT', 'channel'),
-                 ('EXPORT', 'channel1'),
-                 ('EXPORT', 'channel2'),
-                 ('EXPORT', 'channel3'),
-                 ('EXPORT', 'channel4'),
                  ('CODE', 'channel', code_channel) ] )
-
 
     # ----------------------------------------
     # int SYS_Lup(unsigned int addr)
@@ -76,7 +59,8 @@ def scope():
         label('SYS_Exec')
         _LDI('SYS_Exec_88');STW('sysFn')
         LDW(R8);STW('sysArgs0')
-        LDW(R9);_BEQ('.se1');STW(vLR)
+        _LDI(-1);XORW(R9);_BEQ('.se1')
+        LDW(R9);STW(vLR)
         label('.se1')
         SYS(88);RET()
 
@@ -105,13 +89,19 @@ def scope():
         PUSH()
         _LDI('SYS_ReadRomDir_v5_80');STW('sysFn')
         LDW(R8);SYS(80);STW(R8)
-        LDW(R9);_MOVM('sysArgs0',[vAC],8,2)
+        LDW(R9);STW(T2)
+        LDI('sysArgs0');STW(T3)
+        label('.loop')
+        LDW(T3);DEEK();DOKE(T2)
+        LDI(2);ADDW(T2);STW(T2)
+        LDI(2);ADDW(T3);STW(T3)
+        XORI(v('sysArgs0')+8)
+        _BNE('.loop')
         POP();LDW(R8);RET()
 
     module(name='sys_readromdir.s',
            code=[('EXPORT', 'SYS_ReadRomDir'),
-                 ('CODE', 'SYS_ReadRomDir', code0),
-                 ('IMPORT', '_@_bcopy_') if args.cpu < 6 else ('NOP',) ])
+                 ('CODE', 'SYS_ReadRomDir', code0) ])
 
 
     # ----------------------------------------
@@ -152,8 +142,62 @@ def scope():
            code=[('EXPORT', 'SYS_SpiExchangeBytes'),
                  ('CODE', 'SYS_SpiExchangeBytes', code0) ])
 
+    # ----------------------------------------
+    # void* SYS_Sprite6(void *srcpix, void *dst);
+    def code():
+        nohop()
+        label('SYS_Sprite6')
+        _LDI('SYS_Sprite6_v3_64'); STW('sysFn')
+        LDW(R8);STW('sysArgs0')
+        LDW(R9);SYS(64)
+        RET()
 
+    module(name='sys_sprite6.s',
+           code=[('EXPORT', 'SYS_Sprite6'),
+                 ('CODE', 'SYS_Sprite6', code) ] )
     
+    # ----------------------------------------
+    # void* SYS_Sprite6x(void *srcpix, void *dst);
+    def code():
+        nohop()
+        label('SYS_Sprite6x')
+        _LDI('SYS_Sprite6x_v3_64'); STW('sysFn')
+        LDW(R8);STW('sysArgs0')
+        LDW(R9);SYS(64)
+        RET()
+
+    module(name='sys_sprite6x.s',
+           code=[('EXPORT', 'SYS_Sprite6x'),
+                 ('CODE', 'SYS_Sprite6x', code) ] )
+
+    # ----------------------------------------
+    # void* SYS_Sprite6y(void *srcpix, void *dst);
+    def code():
+        nohop()
+        label('SYS_Sprite6y')
+        _LDI('SYS_Sprite6y_v3_64'); STW('sysFn')
+        LDW(R8);STW('sysArgs0')
+        LDW(R9);SYS(64)
+        RET()
+
+    module(name='sys_sprite6y.s',
+           code=[('EXPORT', 'SYS_Sprite6y'),
+                 ('CODE', 'SYS_Sprite6y', code) ] )
+
+    # ----------------------------------------
+    # void* SYS_Sprite6xy(void *srcpix, void *dst);
+    def code():
+        nohop()
+        label('SYS_Sprite6xy')
+        _LDI('SYS_Sprite6xy_v3_64'); STW('sysFn')
+        LDW(R8);STW('sysArgs0')
+        LDW(R9);SYS(64)
+        RET()
+
+    module(name='sys_sprite6xy.s',
+           code=[('EXPORT', 'SYS_Sprite6xy'),
+                 ('CODE', 'SYS_Sprite6xy', code) ] )
+
 # execute    
 scope()
 
