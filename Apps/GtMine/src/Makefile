@@ -1,4 +1,4 @@
-ROM=v6
+ROM=dev7
 GLCC=../../../Compilers/glcc/build/glcc
 D=../
 
