@@ -161,6 +161,16 @@ from asm import *
 import gcl0x as gcl
 import font_v4 as font
 
+
+
+# Enable patches for the Novatron --
+# This supports the particular way the Novatron wires its SPI
+# inputs. This is enabled by default but can be suppressed to
+# attempt support for more than two SPI inputs on Marcel's
+# original RAM & IO extension.
+WITH_NOVATRON_PATCH = defined('WITH_NOVATRON_PATCH', True)
+
+
 enableListing()
 #-----------------------------------------------------------------------
 #
@@ -3832,7 +3842,10 @@ for i in range(8):
   ctrl(Y,Xpp)                   #25+i*12 Set MOSI
   ctrl(Y,Xpp)                   #26+i*12 Raise SCLK, disable RAM!
   ld([0])                       #27+i*12 Get MISO
-  anda(0b00001111)              #28+i*12 This is why R1 as pull-DOWN is simpler
+  if WITH_NOVATRON_PATCH:
+    anda(0b00000011)            #28+i*12 Novatron only drives bits 0 and 1
+  else:
+    anda(0b00001111)            #28+i*12 This is why R1 as pull-DOWN is simpler
   beq(pc()+3)                   #29+i*12
   bra(pc()+2)                   #30+i*12
   ld(1)                         #31+i*12
