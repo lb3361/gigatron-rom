@@ -43,6 +43,7 @@ dev.rom: Core/* Apps/*/* Makefile interface.json
 		Loader=Apps/Loader/Loader_v4.gcl\
 		Bricks=Apps/Bricks/Bricks_v2.gt1\
 		Invader=Apps/Invader/Invader.gt1\
+		GtMine=Apps/GtMine/gtmine.gt1\
 		TinyBASIC=Apps/TinyBASIC/TinyBASIC.gcl\
 		TicTac=Apps/TicTac/LoadTicTac_v1.gcl\
 		TicTacGtb=Apps/TicTac/TicTac_v2.gtb\
