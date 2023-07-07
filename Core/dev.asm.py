@@ -178,12 +178,12 @@ WITH_512K_BOARD = defined('WITH_512K_BOARD')
 # with a suitable hardware patch.
 WITH_128K_BOARD = defined('WITH_128K_BOARD')
 
-# Enable patches for the Novatron --
-# This supports the particular way the Novatron wires its SPI
+# Enable patches for the Gigasaur --
+# This supports the particular way the Gigasaur wires its SPI
 # inputs. This is enabled by default but can be suppressed to
 # attempt support for more than two SPI inputs on Marcel's
 # original RAM & IO extension.
-WITH_NOVATRON_PATCH = defined('WITH_NOVATRON_PATCH', True)
+WITH_GIGASAUR_PATCH = defined('WITH_GIGASAUR_PATCH', True)
 
 # Rom name --
 # This is the stem of the target rom name
@@ -4531,8 +4531,8 @@ for i in range(8):
   ctrl(Y,Xpp)                   #25+i*12 Set MOSI
   ctrl(Y,Xpp)                   #26+i*12 Raise SCLK, disable RAM!
   ld([0])                       #27+i*12 Get MISO
-  if WITH_NOVATRON_PATCH:
-    anda(0b00000011)            #28+i*12 Novatron only drives bits 0 and 1
+  if WITH_GIGASAUR_PATCH:
+    anda(0b00000001)            #28+i*12 Gigasaur only drives bit 0
   else:
     anda(0b00001111)            #28+i*12 This is why R1 as pull-DOWN is simpler
   beq(pc()+3)                   #29+i*12
