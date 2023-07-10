@@ -4532,7 +4532,7 @@ for i in range(8):
   ctrl(Y,Xpp)                   #26+i*12 Raise SCLK, disable RAM!
   ld([0])                       #27+i*12 Get MISO
   if WITH_GIGASAUR_PATCH:
-    anda(0b00000001)            #28+i*12 Gigasaur only drives bit 0
+    anda(0b00000011)            #28+i*12 Gigasaur only drives bits 0 and 1
   else:
     anda(0b00001111)            #28+i*12 This is why R1 as pull-DOWN is simpler
   beq(pc()+3)                   #29+i*12
