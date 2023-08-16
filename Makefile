@@ -5,7 +5,7 @@
 #-----------------------------------------------------------------------
 
 # Latest development version as default target
-DEV:=dev.rom
+DEV:=dev7.rom
 
 # Emulators open gigatron.rom as their ROM image
 gigatron.rom: $(DEV)
@@ -31,15 +31,14 @@ CFLAGS:=-std=c11 -O3 -Wall
 #	Development
 #-----------------------------------------------------------------------
 
-# Development towards "ROM v6"
-dev.rom: Core/* Apps/*/* Makefile interface.json
-	python3 Core/dev.asm.py\
-		Snake=Apps/Snake/Snake_v3.gcl\
+# Development towards "ROM v7"
+
+DEV7APPS=	Snake=Apps/Snake/Snake_v3.gcl\
 		SYS_Racer_v1.py\
 		zippedRacerHorizon=Apps/Racer/Horizon-256x16.rgb\
 		Racer=Apps/Racer/Racer_v3.gcl\
 		Mandelbrot=Apps/Mandelbrot/Mandelbrot_v2.gt1\
-		SYS_Loader_v5.py\
+		Loader=Apps/Loader/Loader.gcl\
 		Bricks=Apps/Bricks/Bricks_v2.gt1\
 		GtMine=Apps/GtMine/gtmine_v1.gt1\
 		TinyBASIC=Apps/TinyBASIC/TinyBASIC_v6.gcl\
@@ -48,12 +47,29 @@ dev.rom: Core/* Apps/*/* Makefile interface.json
 		WozMon=Apps/WozMon/WozMon_v2.gcl\
 		Apple1=Apps/Apple-1/Apple-1_v3.gt1\
 		MSBASIC=Apps/MSBASIC/MSBASIC.gt1\
-		Loader=Apps/Loader/Loader_v4.gcl\
-		Credits=Apps/Credits/Credits_v4.gt1\
-		Egg=Apps/Horizon/Horizon_c_v2.gt1\
-		Boot=Apps/CardBoot/CardBoot_v2.gt1\
+		Credits=Apps/Credits/Credits.gt1\
+		Egg=Apps/Horizon/Horizon_c.gt1\
+		Boot=Apps/CardBoot/CardBoot.gt1\
 		Main=Apps/MainMenu/MainMenu.gcl\
 		Reset=Core/Reset.gcl
+
+dev7.rom: Core/* Apps/*/* Makefile interface.json
+	python3 Core/dev.asm.py \
+		-DROMNAME=\"$@\" \
+		${DEV7APPS}
+
+dev128k7.rom: Core/* Apps/*/* Makefile interface.json
+	python3 Core/dev.asm.py \
+		-DROMNAME=\"$@\" \
+		-DWITH_128K_BOARD=1 \
+		${DEV7APPS}
+
+dev512k7.rom: Core/* Apps/*/* Makefile interface.json
+	python3 Core/dev.asm.py \
+		-DROMNAME=\"$@\" \
+		-DWITH_512K_BOARD=1 \
+		${DEV7APPS}
+
 
 run: Docs/gtemu $(DEV)
 	# Run ROM in reference emulator on console
@@ -92,6 +108,10 @@ burn85:
 	minipro -p attiny85 -w Utils/BabelFish/BabelFish.ATtiny85_fuses.txt -c config
 	# ROM image
 	minipro -p attiny85 -w Utils/BabelFish/BabelFish.ATtiny85.bin -s
+
+
+
+
 
 #-----------------------------------------------------------------------
 #	Released ROM versions

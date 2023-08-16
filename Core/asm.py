@@ -76,10 +76,10 @@ def adda(a, b=AC):        _assemble(_opADD, a, b)
 def suba(a, b=AC):        _assemble(_opSUB, a, b)
 def _jmpy(a):             _assemble(_opJ|_jL,  a)
 def bgt (a):              _assemble(_opJ|_jGT, a)
-def blt (a):              _assemble(_opJ|_jLT, a)
+def blt (a, warn=True):   _assemble(_opJ|_jLT, a, warn=warn)
 def bne (a):              _assemble(_opJ|_jNE, a)
 def beq (a):              _assemble(_opJ|_jEQ, a)
-def bge (a):              _assemble(_opJ|_jGE, a)
+def bge (a, warn=True):   _assemble(_opJ|_jGE, a, warn=warn)
 def ble (a):              _assemble(_opJ|_jLE, a)
 def bra (a):              _assemble(_opJ|_jS,  a)
 def st  (a, b=None, c=None):
@@ -324,7 +324,7 @@ _jGE = 5 << 2
 _jLE = 6 << 2
 _jS  = 7 << 2
 
-def _assemble(op, val, to=AC, addr=None):
+def _assemble(op, val, to=AC, addr=None, warn=True):
   """Assemble and emit one instruction"""
   d, mode, bus = 0, 0, 0                                # [D] (default)
 
@@ -364,6 +364,20 @@ def _assemble(op, val, to=AC, addr=None):
 
   _emit(op | mode | bus, d & 255)
 
+  # Warning for conditional branches with a target address from RAM. The (unverified) danger is
+  # that the ALU is calculating `-A' (for the condition decoder) as L+R+1, with L=0 and R=~A. But B
+  # is also an input to R and comes from memory. The addressing mode is [D], which requires high
+  # EH and EL, and this is slower when the diodes are forward biased from the previous instruction.
+  # Therefore R might momentarily glitch while B changes value and the AND/OR layers in the 74153
+  # multiplexer resettles. Such a glitch then potentially ripples all the way through two 74283
+  # adders and the control unit's 74153. This all depends on the previous instruction's addressing
+  # mode and the values of AC and [D], which we can't know with static analysis.
+  # See also https://github.com/kervinck/gigatron-rom/issues/78
+  if warn and op & _maskOp == _opJ and bus == _busRAM and\
+    op & _maskCc in [ _jGT, _jLT, _jNE, _jEQ, _jGE, _jLE ]:
+    highlight('Warning: %04x : large propagation delay (conditional branch with RAM on bus)' % _romSize)
+
+  
 _mnemonics = [ 'ld', 'anda', 'ora', 'xora', 'adda', 'suba', 'st', 'j' ]
 
 def _hexString(val):
@@ -494,22 +508,6 @@ def _emit(opcode, operand):
   _linenos.append(lineno)
   _romSize += 1
 
-  # Warning for conditional branches with a target address from RAM. The (unverified) danger is
-  # that the ALU is calculating `-A' (for the condition decoder) as L+R+1, with L=0 and R=~A. But B
-  # is also an input to R and comes from memory. The addressing mode is [D], which requires high
-  # EH and EL, and this is slower when the diodes are forward biased from the previous instruction.
-  # Therefore R might momentarily glitch while B changes value and the AND/OR layers in the 74153
-  # multiplexer resettles. Such a glitch then potentially ripples all the way through two 74283
-  # adders and the control unit's 74153. This all depends on the previous instruction's addressing
-  # mode and the values of AC and [D], which we can't know with static analysis.
-  # See also https://github.com/kervinck/gigatron-rom/issues/78
-  if opcode & _maskOp == _opJ and\
-    opcode & _maskBus == _busRAM and\
-    opcode & _maskCc in [ _jGT, _jLT, _jNE, _jEQ, _jGE, _jLE ]: # XXX Only check jGT, jLT, jNE?
-    disassembly = disassemble(opcode, operand)
-    print('%04x %02x%02x  %s' % (_romSize, opcode, operand, disassembly))
-    highlight('Warning: large propagation delay (conditional branch with RAM on bus)')
-
 def loadBindings(symfile):
   # Load JSON file into symbol table
   global _symbols
@@ -526,8 +524,11 @@ def getRom1():
 def writeRomFiles(sourceFile):
 
   # Determine stem for file names
-  stem, _ = splitext(sourceFile)        # Remove .py
-  stem, _ = splitext(stem)              # Remove .asm
+  stem = sourceFile
+  if stem.endswith('.py'):
+    stem, _ = splitext(stem)              # Remove .py
+  if stem.endswith('.asm'):
+    stem, _ = splitext(stem)              # Remove .asm
   stem = basename(stem)
   if stem == '': stem = 'out'
 
