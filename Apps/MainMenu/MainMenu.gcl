@@ -46,11 +46,14 @@ gcl0x
   pop ret
 ] PrintText=
 
-{ Print 26 dashes }
+{ Print horizontal line }
 [def
  push
- $2d {'-'} Char=
- 26 [do j= PrintChar! j 1- if>0loop]
+ \SYS_SetMemory_v2_54 _sysFn=
+ 156 \sysArgs0.
+ Color \sysArgs1.
+ $400 Pos+ \sysArgs2:
+ 54!!
  Newline!
  pop ret
 ] PrintDivider=
@@ -206,11 +209,7 @@ Pos 48+ j& q=                   {Box of current cursor}
 { Load and start the selected program }
 \SYS_Exec_88 _sysFn=            {ROM loader}
 Program _sysArgs0=              {ROM image}
-\userCode _vLR=                 {Start of execution address}
-MenuItem 10- [if<>0 1-]         {XXX MSBASIC and Apple1 need workaround}
-[if=0
-  \channelMask_v4, $f8&         {Clear channelMask before loading}
-  \channelMask_v4.]
+0 _vLR=                         {Start at advertised execution address}
 88!!                            {Load from ROM and execute}
 
 {-----------------------------------------------------------------------+

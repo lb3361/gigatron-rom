@@ -11,10 +11,11 @@ import sys
 from pathlib import Path
 
 class Program:
-  def __init__(self, name, forRom=True):
+  def __init__(self, name, forRom=True, romName=None):
     self.name = name     # For defining unique labels in global symbol table
     self.forRom = forRom # Inject trampolines if compiling for ROM XXX why not do that outside?
     self.comments = []   # Stack of line numbers
+    self.romName = romName
     self.lineNumber = 0
     self.lastWord = None
     self.filename = None
@@ -341,11 +342,16 @@ class Program:
     # Convert maximum Gigatron cycles to the negative of excess ticks
     if con & 1:
       self.error('Invalid value (must be even, got %d)' % con)
-    extraTicks = con//2 - symbol('maxTicks')
+    # If the maxTicks symbols is not defined, use 14.
+    # All ROMs should ensure that maxTicks=14 works here.
+    maxTicks = symbol('maxTicks') or 14
+    extraTicks = con//2 - 14
     return 256 - extraTicks if extraTicks > 0 else 0
 
   def emitQuote(self, var):
-    if len(var) > 0:
+    if var == '\\DISPLAYNAME' and isinstance(self.romName,str):
+      d = self.romName
+    elif len(var) > 0:
       d = '' # Replace backquotes with spaces
       for c in var:
         d += ' ' if c == '`' else c
