@@ -34,14 +34,12 @@ CFLAGS:=-std=c11 -O3 -Wall
 # Development towards "ROM v6"
 dev.rom: Core/* Apps/*/* Makefile interface.json
 	python3 Core/dev.asm.py\
-		packedPictures=Apps/Pictures/packedPictures.rgb\
 		Snake=Apps/Snake/Snake_v3.gcl\
 		SYS_Racer_v1.py\
 		zippedRacerHorizon=Apps/Racer/Horizon-256x16.rgb\
 		Racer=Apps/Racer/Racer_v3.gcl\
 		Mandelbrot=Apps/Mandelbrot/Mandelbrot_v2.gt1\
 		SYS_Loader_v5.py\
-		Pictures=Apps/Pictures/Pictures_v3.gcl\
 		Bricks=Apps/Bricks/Bricks_v2.gt1\
 		GtMine=Apps/GtMine/gtmine_v1.gt1\
 		TinyBASIC=Apps/TinyBASIC/TinyBASIC_v6.gcl\
