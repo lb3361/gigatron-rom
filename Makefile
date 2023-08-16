@@ -60,13 +60,13 @@ dev7.rom: Core/* Apps/*/* Makefile interface.json
 
 dev128k7.rom: Core/* Apps/*/* Makefile interface.json
 	python3 Core/dev.asm.py \
-		-DROMNAME=\"$@\" \
+		-DROMNAME=\"$@\" -DDISPLAYNAME=\"[128k7]\"\
 		-DWITH_128K_BOARD=1 \
 		${DEV7APPS}
 
 dev512k7.rom: Core/* Apps/*/* Makefile interface.json
 	python3 Core/dev.asm.py \
-		-DROMNAME=\"$@\" \
+		-DROMNAME=\"$@\" -DDISPLAYNAME=\"[512k7]\"\
 		-DWITH_512K_BOARD=1 \
 		${DEV7APPS}
 
