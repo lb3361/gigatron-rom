@@ -3,7 +3,7 @@
 CC=glcc
 
 # use 32k map modified by overlay horizon.ovl
-CFLAGS=-map=32k,./Horizon.ovl -rom=v6
+CFLAGS=-map=32k,./Horizon.ovl -rom=dev7
 
 # avoid runtime bss initialization to save code.
 LDFLAGS=--no-runtime-bss-init
