@@ -22,6 +22,10 @@
 #include <dirent.h>
 #endif
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 #ifndef STAND_ALONE
 #include "editor.h"
 #include "timing.h"
@@ -84,8 +88,13 @@ namespace Loader
 #else
     std::string getExeDir(void)
     {
-        char dir[PATH_MAX];
+        char dir[PATH_MAX+1];
+#if __APPLE__
+	uint32_t bufsize = PATH_MAX;
+	ssize_t result = (_NSGetExecutablePath(dir,&bufsize)) ? 0 : bufsize;
+#else
         ssize_t result = readlink("/proc/self/exe", dir, PATH_MAX);
+#endif
         std::string path = (result > 0) ? dir : ".";
         size_t slash = path.find_last_of("\\/");
         path = (slash != std::string::npos) ? path.substr(0, slash) : ".";
@@ -178,6 +187,7 @@ namespace Loader
 
             // Reserve space taking into account ONE_CONST_ADDRESS
             page0._loAddress = start;
+            page0._hiAddress = 0;
             page0._segmentSize = end - start + 1;
             page0._dataBytes.resize(end - start + 1, 0x00);
             if(start <= ONE_CONST_ADDRESS && end >= ONE_CONST_ADDRESS) page0._dataBytes[ONE_CONST_ADDRESS-start] = 0x01;

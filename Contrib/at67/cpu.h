@@ -73,7 +73,7 @@
 
 namespace Cpu
 {
-    enum RomType {ROMERR=0x00, ROMv1=0x1c, ROMv2=0x20, ROMv3=0x28, ROMv4=0x38, ROMv5a=0x40, SDCARD=0xf0, DEVROM=0xf8};
+    enum RomType {ROMERR=0x00, ROMv1=0x1c, ROMv2=0x20, ROMv3=0x28, ROMv4=0x38, ROMv5a=0x40, ROMv6=0x48, SDCARD=0xf0, DEVROM=0xf8};
     enum ScanlineMode {Normal=0, VideoB, VideoC, VideoBC, NumScanlineModes};
     enum InternalGt1Id {SnakeGt1=0, RacerGt1=1, MandelbrotGt1=2, PicturesGt1=3, CreditsGt1=4, LoaderGt1=5, NumInternalGt1s};
     enum Endianness {LittleEndian = 0x03020100ul, BigEndian = 0x00010203ul};
