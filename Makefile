@@ -40,7 +40,7 @@ DEV7APPS=	Snake=Apps/Snake/Snake_v3.gcl\
 		Mandelbrot=Apps/Mandelbrot/Mandelbrot_v2.gt1\
 		Loader=Apps/Loader/Loader.gcl\
 		Bricks=Apps/Bricks/Bricks_v2.gt1\
-		GtMine=Apps/GtMine/gtmine_v1.gt1\
+		GtMine=Apps/GtMine/gtmine.gt1\
 		TinyBASIC=Apps/TinyBASIC/TinyBASIC_v6.gcl\
 		TicTac=Apps/TicTac/LoadTicTac_v1.gcl\
 		TicTacGtb=Apps/TicTac/TicTac_v2.gtb\
