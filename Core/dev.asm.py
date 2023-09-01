@@ -2509,29 +2509,29 @@ ld([sysFn+1],Y)                 #12
 jmp(Y,[sysFn])                  #13
 #dummy()                        #14 Overlap
 #
-# Instruction SUBW: Word subtract with zero page (AC-=[D]+256*[D+1]), 28 cycles
-# All cases can be done in 26 cycles, but the code will become much larger
+# Instruction SUBW (b8 vv), 30 cycles
+# * Subtract [vv] from vAC (AC-=[vv]+256*[vv+1])
 label('SUBW')
 ld(AC,X)                        #10,14 Address of low byte to be subtracted
-adda(1)                         #11
-st([vTmp])                      #12 Address of high byte to be subtracted
-ld([vAC])                       #13
-bmi('.subw#16')                 #14
-suba([X])                       #15
-st([vAC])                       #16 Store low result
-bra('.subw#19')                 #17
-ora([X])                        #18 Carry in bit 7
-label('.subw#16')
-st([vAC])                       #16 Store low result
-anda([X])                       #17 Carry in bit 7
-nop()                           #18
-label('.subw#19')
-anda(0x80,X)                    #19 Move carry to bit 0
-ld([vAC+1])                     #20
-suba([X])                       #21
-ld([vTmp],X)                    #22
-suba([X])                       #23
-st([vAC+1])                     #24
+ld(hi('subw#14'),Y)             #11
+jmp(Y,'subw#14')                #12
+adda(1)                         #13
+
+# Instruction MOVW (bc dd ss), 36 cycles
+# * Move word [ss..ss+1] to [dd..dd+1].
+# * Trashes sysArgs7
+label('MOVW_v7')
+st([sysArgs+7])                 #10 destination operand
+st([Y,Xpp])                     #11
+ld([Y,X])                       #12 source operand
+ld(hi('movw#16'),Y)             #13
+jmp(Y,'movw#16')                #14
+adda(1,X)                       #15
+
+# Free instruction slots (8 bytes)
+fillers(until=0xca)
+
+# SYS call re-entry code (fixed address)
 label('REENTER_28')
 ld(-28/2)                       #25
 label('REENTER')
@@ -2671,9 +2671,6 @@ label('XORW')
 ld(hi('xorw'),Y)                #10,12
 jmp(Y,'xorw')                   #11
 st([vTmp])                      #12
-# We keep XORW 2 cycles faster than ANDW/ORW, because that
-# can be useful for comparing numbers for equality a tiny
-# bit faster than with SUBW
 
 # Instruction RET: Function return (vPC=vLR-2), 16 cycles
 label('RET')
@@ -2718,44 +2715,42 @@ ld(hi('NEXTY'),Y)               #16
 jmp(Y,'NEXTY')                  #17
 ld(-20/2)                       #18
 
+# LDSB implementation
+label('ldsb#13')
+ld(AC,X)                        #13
+ld([X])                         #14
+st([vAC])                       #15
+bmi(pc()+3)                     #16
+bra(pc()+3)                     #17
+ld(0)                           #18
+ld(0xff)                        #18
+st([vAC+1])                     #19
+ld(hi('NEXTY'),Y)               #20
+jmp(Y,'NEXTY')                  #21
+ld(-24/2)                       #22
+
 # ADDI implementation
 label('addi')
-adda([vAC])                     #13
-st([vAC])                       #14 Store low result
-bmi('.addi#17')                 #15 Now figure out if there was a carry
-suba([vTmp])                    #16 Gets back the initial value of vAC
-bra('.addi#19')                 #17
+ld(hi('NEXTY'),Y)               #13
+adda([vAC])                     #14
+st([vAC])                       #15 Store low result
+bmi('.addi#18')                 #16 Now figure out if there was a carry
+suba([vTmp])                    #17 Gets back the initial value of vAC
 ora([vTmp])                     #18 Carry in bit 7
-label('.addi#17')
-anda([vTmp])                    #17 Carry in bit 7
-nop()                           #18
-label('.addi#19')
-anda(0x80,X)                    #19 Move carry to bit 0
-ld([X])                         #20
+bmi('.addi#21c')                #19
+ld(1)                           #20
+label('.addi#21n')
+jmp(Y,'NEXTY')                  #21
+ld(-24/2)                       #22
+label('.addi#18')
+anda([vTmp])                    #18 Carry in bit 7
+bpl('.addi#21n')                #19
+ld(1)                           #20
+label('.addi#21c')
 adda([vAC+1])                   #21 Add the high bytes with carry
-ld(hi('REENTER_28'),Y)          #22
-jmp(Y,'REENTER_28')             #23
-st([vAC+1])                     #24 Store high result
-
-# SUBI implementation
-label('subi')
-ld([vAC])                       #13
-bmi('.subi#16')                 #14
-suba([vTmp])                    #15
-st([vAC])                       #16 Store low result
-bra('.subi#19')                 #17
-ora([vTmp])                     #18 Carry in bit 7
-label('.subi#16')
-st([vAC])                       #16 Store low result
-anda([vTmp])                    #17 Carry in bit 7
-nop()                           #18
-label('.subi#19')
-anda(0x80,X)                    #19 Move carry to bit 0
-ld([vAC+1])                     #20
-suba([X])                       #21
-ld(hi('REENTER_28'),Y)          #22
-jmp(Y,'REENTER_28')             #23
-st([vAC+1])                     #24
+st([vAC+1])                     #22 Store high result
+jmp(Y,'NEXTY')                  #24
+ld(-26/2)                       #25
 
 # LSLW implementation
 label('lslw')
@@ -2843,13 +2838,13 @@ ld([vTmp],X)                    #18
 ld([X])                         #19
 anda([vAC])                     #20
 st([vAC])                       #21
-ld(hi('REENTER_28'),Y)          #22
-jmp(Y,'REENTER_28')             #23
-#dummy()                        #24 Overlap
-#
+ld(hi('NEXTY'),Y)               #22
+jmp(Y,'NEXTY')                  #23
+ld(-26/2)                       #24
+
 # ORW implementation
 label('orw')
-st([vTmp])                      #13,24
+st([vTmp])                      #13
 adda(1,X)                       #14
 ld([X])                         #15
 ora([vAC+1])                    #16
@@ -2858,23 +2853,22 @@ ld([vTmp],X)                    #18
 ld([X])                         #19
 ora([vAC])                      #20
 st([vAC])                       #21
-ld(hi('REENTER_28'),Y)          #22
-jmp(Y,'REENTER_28')             #23
-#dummy()                        #24 Overlap
+label('orw#22')
+ld(hi('NEXTY'),Y)               #22
+jmp(Y,'NEXTY')                  #23
+ld(-26/2)                       #24
 #
 # XORW implementation
 label('xorw')
-adda(1,X)                       #13,24
+adda(1,X)                       #13
 ld([X])                         #14
 xora([vAC+1])                   #15
 st([vAC+1])                     #16
 ld([vTmp],X)                    #17
 ld([X])                         #18
 xora([vAC])                     #19
-st([vAC])                       #20
-ld(hi('REENTER'),Y)             #21
-jmp(Y,'REENTER')                #22
-ld(-26/2)                       #23
+bra('orw#22')                   #20
+st([vAC])                       #21
 #
 # SYS implementation
 label('.sys#16')
@@ -4012,10 +4006,9 @@ ld(-32/2)                       #30
 label('.sysRsb#20')
 ld([vPC])                       #20
 suba(2)                         #21
-st([vPC])                       #22
-ld(hi('REENTER'),Y)             #23
-jmp(Y,'REENTER')                #24
-ld(-28/2)                       #25
+ld(hi('REENTER_28'),Y)          #22
+jmp(Y,'REENTER_28')             #23
+st([vPC])                       #24
 
 # CALLI implementation (vCPU instruction)
 label('calli#13')
@@ -6730,32 +6723,27 @@ ld(-14/2)                       #13
 label('sysd#3e')
 ld([sysArgs+6])                 #3
 anda(3)                         #4
-bne('sysd#7e')                  #5
-ld(hi('NEXTY'),Y)               #6
+beq('sysd#7e')                  #5
+anda(1)                         #6
+bne('rdivs#9b')                 #7 neg quotient if [sysArgs+6]&1
+ld(sysArgs+0,X)                 #8
+st([sysArgs+6],Y)               #9 neg remainder if [sysArgs+6]&2
+bra('rdivs#12b')                #10
+ld(sysArgs+4,X)                 #11
+label('sysd#7e')
 ld([sysArgs+0])                 #7 copy quotient into vAC
 st([vAC])                       #8
 ld([sysArgs+1])                 #9
 st([vAC+1])                     #10
 ld(hi('ENTER'))                 #11 exit fsm
 st([vCpuSelect])                #12
-jmp(Y,'NEXTY')                  #13
-ld(-16//2)                      #14
-label('sysd#7e')
-ld(hi('rdivs#10'),Y)            #7
-jmp(Y,'rdivs#10')               #8
-anda(1)                         #9
+ld(hi('REENTER'),Y)             #13
+jmp(Y,'REENTER')                #14
+ld(-18//2)                      #15
+
 
 #-----------------------------------------------------------------------
 # FSM14 Opcodes
-
-label('fsm14op1#21')
-ld(1)                           #21
-adda([vPC])                     #22
-st([vPC])                       #23
-ld(hi('FSM14_ENTER'))           #24
-st([vCpuSelect])                #25
-bra('NEXT')                     #26
-ld(-28/2)                       #27
 
 # MULW implementation
 label('mulw#3a')
@@ -6797,13 +6785,41 @@ ld('rdivs#3b')                  #3
 st([fsmState])                  #4
 bra('mulw#7a')                  #5
 ld(15*8)                        #6
-label('rdivs#3b')
-ld(hi('rdivs#6b'),Y)            #3
-jmp(Y,'rdivs#6b')               #4
-label('rdivs#3c')
-ld(hi('rdivs#6c'),Y)            #3
-jmp(Y,'rdivs#6c')               #4
 
+label('rdivs#3b')
+ld('rdivs#3c')                  #3
+st([fsmState])                  #4
+ld(sysArgs+2,X)                 #5
+ld([sysArgs+3])                 #6 test divisor sign
+bge('rdivs#9c')                 #7
+ld(1)                           #8
+label('rdivs#9b')
+xora([sysArgs+6])               #9
+st([sysArgs+6])                 #10
+ld(0,Y)                         #11 negate [X]
+label('rdivs#12b')
+ld(0)                           #12
+suba([Y,X])                     #13
+st([Y,Xpp])                     #14
+beq(pc()-3)                     #15 ld(0)
+bra(pc()+2)                     #16
+ld(0xff)                        #17
+suba([Y,X])                     #18
+st([Y,X])                       #19
+bra('NEXT')                     #20
+ld(-22/2)                       #21
+
+label('rdivs#3c')
+ld('sysd#3a')                   #3
+st([fsmState])                  #4
+ld(sysArgs+0,X)                 #5
+ld([sysArgs+1])                 #6 test dividend sign
+blt('rdivs#9b')                 #7
+ld(3)                           #8
+label('rdivs#9c')
+nop()                           #9
+bra('NEXT')                     #10
+ld(-12/2)                       #11
 
 #-----------------------------------------------------------------------
 #
@@ -7035,12 +7051,12 @@ ld(-24/2)                       #23
 
 
 # uFSM opcode 'uFAR'
-# - jump to another page
+# - jump to code in sys_Loader page
 label('fsm-uFAR')
 st([vTmp])                      #5
 ld([fsmState])                  #6
 adda(2)                         #7
-ld(hi('fsm-far-page'),Y)        #8
+ld(hi('sys_Loader'),Y)          #8
 jmp(Y,[vTmp])                   #9
 st([fsmState])                  #10
 
@@ -7128,9 +7144,7 @@ fsmAsm('uBNE', 'sysl-frame')
 align(0x100, size=0x100)
 
 #----------------------------------------
-# Loader stuff
-
-label('fsm-far-page')
+# SYS_Loader
 
 label('sys_Loader')
 suba(12)                        #18
@@ -7194,7 +7208,7 @@ ld(-28/2)                       #27
 
 
 #----------------------------------------
-# FSM14 overflow code
+# SYS_Multiply and SYS_Divide
 
 # sys_Multiply_s16
 label('sys_Multiply_s16')
@@ -7223,66 +7237,6 @@ st([vCpuSelect])                #26
 adda(1,Y)                       #27
 jmp(Y, 'NEXT')                  #28
 ld(-30/2)                       #29
-
-# RDIVS helpers
-label('rdivs#16')
-ld(0)                           #16
-ld(0,Y)                         #17 negate [X]
-suba([Y,X])                     #18
-st([Y,Xpp])                     #19
-beq(pc()+3)                     #20
-bra(pc()+3)                     #21
-ld(0xff)                        #22
-ld(0)                           #22
-suba([Y,X])                     #23
-st([Y,X])                       #24
-ld(hi('FSM14_NEXT'),Y)          #25
-jmp(Y,'NEXT')                   #26
-ld(-28/2)                       #27
-
-label('rdivs#11')
-ld(hi('FSM14_NEXT'),Y)          #11
-jmp(Y,'NEXT')                   #12
-ld(-14/2)                       #13
-
-# RDIVS entry
-label('rdivs#6b')
-ld('rdivs#3c')                  #6
-st([fsmState])                  #7
-ld([sysArgs+3])                 #8
-bge('rdivs#11')                 #9
-ld(1)                           #10
-xora([sysArgs+6])               #11
-st([sysArgs+6])                 #12
-ld(sysArgs+2,X)                 #13
-bra('rdivs#16')                 #14
-nop()                           #15
-
-label('rdivs#6c')
-ld('sysd#3a')                   #6
-st([fsmState])                  #7
-ld([sysArgs+1])                 #8
-bge('rdivs#11')                 #9
-ld(3)                           #10
-xora([sysArgs+6])               #11
-st([sysArgs+6])                 #12
-ld(sysArgs+0,X)                 #13
-bra('rdivs#16')                 #14
-nop()                           #15
-
-# RDIVS exit
-label('rdivs#10')
-beq('rdivs#12')                 #10
-ld(1)                           #11
-xora([sysArgs+6])               #12 negate quotient
-st([sysArgs+6])                 #13
-bra('rdivs#16')                 #14
-ld(sysArgs+0,X)                 #15
-label('rdivs#12')
-ld(0)                           #12,15
-st([sysArgs+6])                 #13
-bra('rdivs#16')                 #14
-ld(sysArgs+4,X)                 #15
 
 
 #----------------------------------------
@@ -7342,7 +7296,63 @@ jmp(Y,'NEXTY')                  #25
 ld(-28/2)                       #26
 
 #----------------------------------------
-# More vCPU ops
+# More vCPU opcodes
+
+# SUBW implementation
+label('subw#14')
+st([vTmp])                      #14 Address of high byte to be subtracted
+ld(hi('NEXTY'),Y)               #15
+ld([vAC])                       #16
+bmi('subw#19')                  #17
+suba([X])                       #18
+st([vAC])                       #19 Store low result
+ora([X])                        #20 Carry in bit 7
+anda(0x80,X)                    #21 Move carry to bit 0
+ld([vAC+1])                     #22
+suba([X])                       #23
+ld([vTmp],X)                    #24
+suba([X])                       #25
+st([vAC+1])                     #26
+jmp(Y,'NEXTY')                  #27
+ld(-30/2)                       #28
+label('subw#19')
+st([vAC])                       #19 Store low result
+anda([X])                       #20 Carry in bit 7
+anda(0x80,X)                    #21 Move carry to bit 0
+ld([vAC+1])                     #22
+suba([X])                       #23
+ld([vTmp],X)                    #24
+suba([X])                       #25
+st([vAC+1])                     #26
+jmp(Y,'NEXTY')                  #27
+ld(-30/2)                       #28
+
+# MOVW implementation
+label('movw#16')
+st([vTmp])                      #16
+ld(min(0,maxTicks-36//2))       #17
+adda([vTicks])                  #18
+blt('movw#21')                  #19
+ld([vPC])                       #20
+adda(1)                         #21
+st([vPC])                       #22
+ld([X])                         #23
+ld([vTmp],X)                    #24
+st([vTmp])                      #25
+ld([X])                         #26
+ld([sysArgs+7],X)               #27
+ld(0,Y)                         #28
+st([Y,Xpp])                     #29
+ld([vTmp])                      #30
+st([Y,X])                       #31
+ld(hi('NEXTY'),Y)               #32
+jmp(Y,'NEXTY')                  #33
+ld(-36/2)                       #34
+label('movw#21')
+suba(2)                         #21
+ld(hi('REENTER_28'),Y)          #22
+jmp(Y,'REENTER_28')             #23
+st([vPC])                       #24
 
 # MOVQB implementation
 label('movqb#13')
@@ -7376,77 +7386,29 @@ ld(hi('NEXTY'),Y)               #24
 jmp(Y,'NEXTY')                  #25
 ld(-28/2)                       #26
 
-# LDSB implementation
-label('ldsb#13')
-ld(AC,X)                        #13
-ld([X])                         #14
-st([vAC])                       #15
-bmi(pc()+3)                     #16
-bra(pc()+3)                     #17
-ld(0)                           #18
-ld(0xff)                        #18
-st([vAC+1])                     #19
-ld(hi('NEXTY'),Y)               #20
+# SUBI implementation
+label('subi')
+ld(hi('NEXTY'),Y)               #13
+ld([vAC])                       #14
+bmi('.subi#17')                 #15
+suba([vTmp])                    #16
+st([vAC])                       #17 Store low result
+ora([vTmp])                     #18 Carry in bit 7
+bmi('.subi#21c')                #19
+ld([vAC+1])                     #20
+label('.subi#21nc')
 jmp(Y,'NEXTY')                  #21
 ld(-24/2)                       #22
-
-#----------------------------------------
-# FSM1E overflow
-
-label('ldfac#6c')
-ld(0)                           #6
-st([vLAX])                      #7 mantissa extension
-ld([vLAX+4])                    #8
-xora([vFAS])                    #9 sign
-anda(0x80)                      #10
-ld(AC,X)                        #11
-ora([X])                        #12
-xora([vFAS])                    #13
-st([vFAS])                      #14
-ld([vLAX+4])                    #15 high byte
-ora(0x80)                       #16
-st([vLAX+4])                    #17
-label('ldfac#18c')
-ld(hi('ENTER'))                 #18
-st([vCpuSelect])                #19
-adda(1,Y)                       #20
-jmp(Y,'NEXTY')                  #21
-ld(-24/2)                       #22
-
-label('ldfarg#6c')
-st([sysArgs+0])                 #6 mantissa extension
-ld([sysArgs+4])                 #7
-xora([vFAS])                    #8 sign
-anda(0x80,X)                    #9
-ld([vFAS])                      #10
-anda(0xfe)                      #11
-ora([X])                        #12
-st([vFAS])                      #13
-ld([sysArgs+4])                 #14 high byte
-ora(0x80)                       #15
-bra('ldfac#18c')                #16
-st([sysArgs+4])                 #17
-
-label('ldfac#10b')
-adda([vAC+1])                   #10
-st([vAC+1],Y)                   #11
-ld([Y,X])                       #12
-ld([vT3],X)                     #13
-st([X])                         #14
-ld([vT3])                       #15
-suba(1)                         #16
-st([vT3])                       #17
-xora([vT3+1])                   #18
-nop()                           #19
-beq('ldfac#22b')                #20
-ld(hi('FSM1E_NEXT'),Y)          #21
-jmp(Y,'FSM1E_NEXT')             #22
-ld(-24/2)                       #23
-label('ldfac#22b')
-ld([sysArgs+6])                 #22
-st([fsmState])                  #23
-jmp(Y,'FSM1E_NEXT')             #24
-ld(-26/2)                       #25
+label('.subi#17')
+st([vAC])                       #17 Store low result
+anda([vTmp])                    #18 Carry in bit 7
+bpl('.subi#21nc')               #19
+ld([vAC+1])                     #20
+label('.subi#21c')
+suba(1)                         #21
+st([vAC+1])                     #22
+jmp(Y,'NEXTY')                  #23
+ld(-26/2)                       #24
 
 
 
@@ -7469,15 +7431,12 @@ def oplabel(name):
 # * Trashes sysArgs[567]
 # * No page crossings
 oplabel('ADDL_v7')
-bra('fsm1aop0#16')
+bra('fsm1bop0#16')
 ld('addl#3a')
 
-# Instruction ADDX (35 02) [22+22+22+22+30 cycles]
-# * Add extended long ([vAC]..[vAC]+4) to LAX
-# * Trashes sysArgs[567]
-# * No page crossings
-oplabel('ADDX_v7')
-bra('fsm1aop0#16')
+# Free instruction slot (35 02)
+# * Formerly ADDX
+bra('fsm1cop0#16')
 ld('addx#3a')
 
 # Instruction SUBL (35 04) [22+18+20+28 cycles]
@@ -7509,21 +7468,21 @@ oplabel('XORL_v7')
 bra('fsm1aop0#16')
 ld('xorl#3a')
 
-# Instruction NEGVL (35 0c vv) [28+28 cycles]
+# Instruction NEGVL (35 0c vv) [28+24 cycles]
 # * Negate long (vv..vv+3)
 # * Trashes sysArgs[67]
 oplabel('NEGVL_v7')
 bra('fsm1bop1#16')
 ld('negvl#3a')
 
-# Instruction NEGX (35 0e) [22+14+28 cycles]
+# Instruction NEGX (35 0e) [22+14+24 cycles]
 # * Negate extended accumulator LAX
 # * Trashes sysArgs[67]
 oplabel('NEGX_v7')
 bra('fsm1bop0#16')
 ld('negx#3a')
 
-# Instruction LSLVL (35 10 vv) [28+24+22 cycles]
+# Instruction LSLVL (35 10 vv) [28+30 cycles]
 # * Shift left long word (vv..vv+3)
 # * No page crossings
 # * Trashes sysArgs[67]
@@ -7531,7 +7490,7 @@ oplabel('LSLVL_v7')
 bra('fsm1bop1#16')              #14
 ld('lslvl#3a')                  #15
 
-# Instruction LSLXA (35 12) [36+(n//8)*26+(n%8)*40 cycles]
+# Instruction LSLXA (35 12) [36+20*(n/8)+34*(n%8)+6*(n%8!=0) cycles]
 # * Shift extended long accumulator LAX left by vACL positions
 # * LAX := LAX << (vACL & 0x3f)
 # * Trashes sysArgs[67]
@@ -7544,7 +7503,7 @@ ld('lslxa#3a')
 # * On return sets vAC to a positive/negative/zero value
 # * Trashes sysArgs[7]. No page crossings
 oplabel('CMPLS_v7')
-bra('fsm1bop0#16')
+bra('fsm1eop0#16')
 ld('cmpls#3a')
 
 # Instruction CMPLU (35 16) [22+20+24 max cycles]
@@ -7552,10 +7511,10 @@ ld('cmpls#3a')
 # * On return sets vAC to a positive/negative/zero value
 # * Trashes sysArgs[7]. No page crossings
 oplabel('CMPLU_v7')
-bra('fsm1bop0#16')
+bra('fsm1eop0#16')
 ld('cmplu#3a')
 
-# Instruction LSRXA (35 18) [total 220-300 cycles]
+# Instruction LSRXA (35 18) [52+20*(n/8)+172to192*(n%8!=0) cycles]
 # * Shift extended long accumulator LAX right by vACL positions
 # * LAX := LAX >> (vACL & 0x3f)
 # * Trashes vAC, sysArgs[67]
@@ -7563,7 +7522,7 @@ oplabel('LSRXA_v7')
 bra('fsm1cop0#16')
 ld('lsrxa#3a')
 
-# Instruction RORX (35 1a) [total 210 cycles]
+# Instruction RORX (35 1a) [total 212 cycles]
 # * Rotate extended long accumulator LAX right
 # * Trashes vAC, sysArgs[67]
 #      ,-->--[LAX+4...LAX]-->--.
@@ -7595,54 +7554,53 @@ ld(hi('stlac#17'),Y)            #14
 jmp(Y,'stlac#17')               #15
 nop()                           #16
 
-# Instruction INCVL (35 23 xx), 22+(18/22/28/30) cycles
+# Instruction INCVL (35 23 xx), 22+(16/20/24/26) cycles
 # * Increment long [xx..xx+3]
 # * Trashes sysArgs[67]
 oplabel('INCVL_v7')
 bra('fsm1bop1#16')              #14
 ld('incvl#3a')                  #15
 
-# Instruction STFAC (35 25)
+# Instruction STFAC (35 25), 22+28 cycles (66 zero, 136 cross)
 # * Store FAC into [vAC..vAC+4] in MFP format
 # * Trashes T[0..3] sysArgs[0..7]
 oplabel('STFAC_v7')
-bra('fsm1cop0#16')              #14
+bra('fsm1eop0#16')              #14
 ld('stfac#3a')                  #15
 
-# Instruction LDFAC (35 27)
+# Instruction LDFAC (35 27), 22+28+22 cycles (44 zero, 152 cross)
 # * Load the MFP number [vAC..vAC+4] into FAC
 # * Trashes T3, sysArgs[567]
 oplabel('LDFAC_v7')
-bra('fsm1eop0#16')              #14
+bra('fsm1aop0#16')              #14
 ld('ldfac#3a')                  #15
 
-# Instruction LDFARG (35 29)
+# Instruction LDFARG (35 29), 22+28+22 cycles (44 zero, 152 cross)
 # * This instruction is intended for the runtime.
 #   Store the exponent of MFP number at [vAC..vAC+4] into v2L,
 #   store its 40 bits extended mantissa in sysArgs[04],
 #   sets bit 0 of vFAS to indicate if it sign differs from FAC's.
 # * Trashes T3, sysArgs[567]
 oplabel('LDFARG_v7')
-bra('fsm1eop0#16')              #14
+bra('fsm1aop0#16')              #14
 ld('ldfarg#3a')                 #15
 
-# fsm18 helper (0 arg)
-label('fsm18op0#16')
+# fsm1b helper (2 args)
+label('fsm1bop2#16')
 st([fsmState])                  #16
-ld(hi('FSM18_ENTER'))           #17
-st([vCpuSelect])                #18
-adda(1,Y)                       #19
-jmp(Y,'NEXT')                   #20
-ld(-22/2)                       #21
-
-# fsm1e helper (0 arg)
-label('fsm1eop0#16')
-st([fsmState])                  #16
-ld(hi('FSM1E_ENTER'))           #17
-st([vCpuSelect])                #18
-adda(1,Y)                       #19
-jmp(Y,'NEXT')                   #20
-ld(-22/2)                       #21
+ld([Y,X])                       #17
+st([Y,Xpp])                     #18
+st([sysArgs+5])                 #19
+ld([Y,X])                       #20
+st([sysArgs+6])                 #21
+ld(2)                           #22
+adda([vPC])                     #23
+st([vPC])                       #24
+ld(hi('FSM1B_ENTER'))           #25
+st([vCpuSelect])                #26
+adda(1,Y)                       #27
+jmp(Y,'NEXT')                   #28
+ld(-30/2)                       #29
 
 # Stretch
 fillers(until=0x39)
@@ -7851,35 +7809,25 @@ ld(0xff)                        #33
 label('fsm14op1#16')
 st([fsmState])                  #16
 ld([Y,X])                       #17
-ld(hi('fsm14op1#21'),Y)         #18
-jmp(Y,'fsm14op1#21')            #19
-st([sysArgs+6])                 #20
-
-# fsm1b helper (0 args)
-label('fsm1bop0#16')
-st([fsmState])                  #16
-ld(hi('FSM1B_ENTER'))           #17
-st([vCpuSelect])                #18
-adda(1,Y)                       #19
-jmp(Y,'NEXT')                   #20
-ld(-22/2)                       #21
+st([sysArgs+6])                 #18
+nop()                           #19
+ld(hi('FSM14_ENTER'))           #20
+label('fsm14op1#21')
+st([vCpuSelect])                #21
+adda(1,Y)                       #22
+ld(1)                           #23
+adda([vPC])                     #24
+st([vPC])                       #25
+jmp(Y,'NEXT')                   #26
+ld(-28/2)                       #27
 
 # fsm1b helper (1 arg)
 label('fsm1bop1#16')
 st([fsmState])                  #16
 ld([Y,X])                       #17
-ld(hi('fsm1bop1#21'),Y)         #18
-jmp(Y,'fsm1bop1#21')            #19
-st([sysArgs+6])                 #20
-
-# fsm1c helper (0 args)
-label('fsm1cop0#16')
-st([fsmState])                  #16
-ld(hi('FSM1C_ENTER'))           #17
-st([vCpuSelect])                #18
-adda(1,Y)                       #19
-jmp(Y,'NEXT')                   #20
-ld(-22/2)                       #21
+st([sysArgs+6])                 #18
+bra('fsm14op1#21')              #19
+ld(hi('FSM1B_ENTER'))           #20
 
 fillers(until=0xcb)
 
@@ -7921,7 +7869,7 @@ ld(-26/2)                       #25
 # * No page crossings, trashes sysArgs,T0,T1
 # * Origin: https://forum.gigatron.io/viewtopic.php?p=2322#p2322
 oplabel('MOVL_v7')
-bra('fsm18op2#16')              #14
+bra('fsm1bop2#16')              #14
 ld('movl#3a')                   #15
 
 # Instruction MOVF (35 dd yy xx), 30+38 cycles
@@ -7929,25 +7877,8 @@ ld('movl#3a')                   #15
 # * No page crossings, trashes sysArgs,T0,T1, but MOVF(xx,sysArgs0) works
 # * Origin: https://forum.gigatron.io/viewtopic.php?p=2322#p2322
 oplabel('MOVF_v7')
-bra('fsm18op2#16')              #14
+bra('fsm1bop2#16')              #14
 ld('movf#3a')                   #15
-
-# fsm18 helper (2 args)
-label('fsm18op2#16')
-st([fsmState])                  #16
-ld([Y,X])                       #17
-st([Y,Xpp])                     #18
-st([sysArgs+5])                 #19
-ld([Y,X])                       #20
-st([sysArgs+6])                 #21
-ld(2)                           #22
-adda([vPC])                     #23
-st([vPC])                       #24
-ld(hi('FSM18_ENTER'))           #25
-st([vCpuSelect])                #26
-adda(1,Y)                       #27
-jmp(Y,'NEXT')                   #28
-ld(-30/2)                       #29
 
 # fsm1a helper (0 args)
 label('fsm1aop0#16')
@@ -7958,15 +7889,42 @@ adda(1,Y)                       #19
 jmp(Y,'NEXT')                   #20
 ld(-22/2)                       #21
 
+# fsm1b helper (0 args)
+label('fsm1bop0#16')
+st([fsmState])                  #16
+ld(hi('FSM1B_ENTER'))           #17
+st([vCpuSelect])                #18
+adda(1,Y)                       #19
+jmp(Y,'NEXT')                   #20
+ld(-22/2)                       #21
+
+# fsm1c helper (0 args)
+label('fsm1cop0#16')
+st([fsmState])                  #16
+ld(hi('FSM1C_ENTER'))           #17
+st([vCpuSelect])                #18
+adda(1,Y)                       #19
+jmp(Y,'NEXT')                   #20
+ld(-22/2)                       #21
+
+# fsm1e helper (0 arg)
+label('fsm1eop0#16')
+st([fsmState])                  #16
+ld(hi('FSM1E_ENTER'))           #17
+st([vCpuSelect])                #18
+adda(1,Y)                       #19
+jmp(Y,'NEXT')                   #20
+ld(-22/2)                       #21
+
 # restart helper
 label('p35restart#18')
-nop()                           #18
-ld(-2)                          #19
-adda([vPC])                     #20
-st([vPC])                       #21
-ld(hi('NEXTY'),Y)               #22
-jmp(Y,'NEXTY')                  #23
-ld(-26/2)                       #24
+ld(-2)                          #18
+adda([vPC])                     #19
+st([vPC])                       #20
+ld(hi('REENTER'),Y)             #21
+jmp(Y,'REENTER')                #22
+ld(-26/2)                       #23
+
 
 
 #-----------------------------------------------------------------------
@@ -7993,74 +7951,9 @@ jmp(Y,[vReturn])                #7
 ld([channel])                   #8
 
 
-# MOVL implementation
-label('movl#3a')
-ld(0,Y)                         #3
-ld([sysArgs+6])                 #4
-adda(1,X)                       #5
-ld([Y,X])                       #6
-st([Y,Xpp])                     #7
-st([sysArgs+1])                 #8
-ld([Y,X])                       #9
-st([Y,Xpp])                     #10
-st([sysArgs+2])                 #11
-ld([Y,X])                       #12
-st([sysArgs+3])                 #13
-ld([sysArgs+6],X)               #14
-ld([Y,X])                       #15
-ld([sysArgs+5],X)               #16
-st([Y,Xpp])                     #17
-ld([sysArgs+1])                 #18
-st([Y,Xpp])                     #19
-ld([sysArgs+2])                 #20
-st([Y,Xpp])                     #21
-ld([sysArgs+3])                 #22
-st([Y,Xpp])                     #23
-ld(hi('ENTER'))                 #24
-st([vCpuSelect])                #25
-ld(hi('NEXTY'),Y)               #26
-jmp(Y,'NEXTY')                  #27
-ld(-30/2)                       #28
 
-# MOVF implementation
-label('movf#3a')
-adda(min(0,maxTicks-38/2))      #3
-blt('movf#6a')                  #4
-ld(0,Y)                         #5
-ld([sysArgs+6],X)               #6
-ld([Y,X])                       #7
-st([Y,Xpp])                     #8
-st([sysArgs+0])                 #9
-ld([Y,X])                       #10
-st([Y,Xpp])                     #11
-st([sysArgs+1])                 #12
-ld([Y,X])                       #13
-st([Y,Xpp])                     #14
-st([sysArgs+2])                 #15
-ld([Y,X])                       #16
-st([Y,Xpp])                     #17
-st([sysArgs+3])                 #18
-ld([Y,X])                       #19
-st([sysArgs+4])                 #20
-ld([sysArgs+5],X)               #21
-ld([sysArgs+0])                 #22
-st([Y,Xpp])                     #23
-ld([sysArgs+1])                 #24
-st([Y,Xpp])                     #25
-ld([sysArgs+2])                 #26
-st([Y,Xpp])                     #27
-ld([sysArgs+3])                 #28
-st([Y,Xpp])                     #29
-ld([sysArgs+4])                 #30
-st([Y,Xpp])                     #31
-ld(hi('ENTER'))                 #32
-st([vCpuSelect])                #33
-ld(hi('NEXTY'),Y)               #34
-jmp(Y,'NEXTY')                  #35
-ld(-38/2)                       #36
-label('movf#6a')
-bra('NEXT')                     #6
-ld(-8/2)                        #7
+#----------------------------------------
+# COPY COPYN
 
 # COPY implementation
 label('copy#18')
@@ -8237,6 +8130,109 @@ ld('copy#3b')                   #16 ->#b : copy1by1
 st([fsmState])                  #17
 bra('NEXT')                     #18
 ld(-20/2)                       #19
+
+#----------------------------------------
+# STXW LDXW
+
+# STXW implementation
+label('stxw#13')
+adda(1)                         #13
+st([sysArgs+6])                 #14
+ld([vPC])                       #15
+adda(2)                         #16
+st([vPC],X)                     #17
+ld([vPC+1],Y)                   #18
+ld([Y,X])                       #19
+st([Y,Xpp])                     #20
+st([sysArgs+4])                 #21 immlo
+ld([Y,X])                       #22
+st([sysArgs+5])                 #23 immhi
+ld('stxw#3a')                   #24
+st([fsmState])                  #25
+ld(hi('FSM18_ENTER'))           #26
+st([vCpuSelect])                #27
+bra('NEXT')                     #28
+ld(-30/2)                       #29
+
+label('stxw#3a')
+ld([sysArgs+6])                 #3
+suba(1,X)                       #4
+ld([sysArgs+4])                 #5 immlo
+adda([X])                       #6 +vlo
+st([sysArgs+4])                 #7
+bmi(pc()+4)                     #8
+suba([X])                       #9
+bra(pc()+4)                     #10
+ora([X])                        #11
+nop()                           #10
+anda([X])                       #11
+anda(0x80,X)                    #12
+ld([X])                         #13 carry
+ld([sysArgs+6],X)               #14
+adda([X])                       #15 +vhi
+adda([sysArgs+5],Y)             #16 +immhi
+ld([sysArgs+4],X)               #17
+ld([vAC])                       #18
+st([Y,Xpp])                     #19
+ld([vAC+1])                     #20
+st([Y,X])                       #21
+ld(hi('ENTER'))                 #22
+st([vCpuSelect])                #23
+adda(1,Y)                       #24
+jmp(Y,'NEXTY')                  #25
+ld(-28/2)                       #26
+
+# LDXW implementation
+label('ldxw#13')
+adda(1)                         #13
+st([sysArgs+6])                 #14
+ld([vPC])                       #15
+adda(2)                         #16
+st([vPC],X)                     #17
+ld([vPC+1],Y)                   #18
+ld([Y,X])                       #19
+st([Y,Xpp])                     #20
+st([sysArgs+4])                 #21 immlo
+ld([Y,X])                       #22
+st([sysArgs+5])                 #23 immhi
+ld('ldxw#3a')                   #24
+st([fsmState])                  #25
+ld(hi('FSM18_ENTER'))           #26
+st([vCpuSelect])                #27
+bra('NEXT')                     #28
+ld(-30/2)                       #29
+
+label('ldxw#3a')
+ld([sysArgs+6])                 #3
+suba(1,X)                       #4
+ld([sysArgs+4])                 #5 immlo
+adda([X])                       #6 +vlo
+st([sysArgs+4])                 #7
+bmi(pc()+4)                     #8
+suba([X])                       #9
+bra(pc()+4)                     #10
+ora([X])                        #11
+nop()                           #10
+anda([X])                       #11
+anda(0x80,X)                    #12
+ld([X])                         #13 carry
+ld([sysArgs+6],X)               #14
+adda([X])                       #15 +vhi
+adda([sysArgs+5],Y)             #16 +immhi
+ld([sysArgs+4],X)               #17
+ld([Y,X])                       #18
+st([Y,Xpp])                     #19
+st([vAC])                       #20
+ld([Y,X])                       #21
+st([vAC+1])                     #22
+ld(hi('ENTER'))                 #23
+st([vCpuSelect])                #24
+adda(1,Y)                       #25
+jmp(Y,'REENTER')                #26
+ld(-30/2)                       #27
+
+
+
 
 #-----------------------------------------------------------------------
 #
@@ -8606,135 +8602,7 @@ jmp(Y,[vReturn])                #7
 ld([channel])                   #8
 
 # ----------------------------------------
-# long addition
-
-label('addl#3a')
-ld([vAC+1],Y)                   #3
-ld([vAC])                       #4
-st([sysArgs+5],X)               #5
-ld([vLAC])                      #6 b0
-adda([Y,X])                     #7
-st([vLAC])                      #8
-bmi(pc()+4)                     #9
-suba([Y,X])                     #10
-bra(pc()+4)                     #11
-ora([Y,X])                      #12
-nop()                           #11
-anda([Y,X])                     #12
-anda(0x80,X)                    #13
-ld([X])                         #14
-st([sysArgs+6])                 #15
-ld('addl#3b')                   #16
-label('fsm1anext#17')
-st([fsmState])                  #17
-bra('NEXT')                     #18
-ld(-20/2)                       #19
-
-label('addl#3b')
-ld([vAC+1],Y)                   #3
-ld([sysArgs+5])                 #4 b1
-adda(1,X)                       #5
-ld([vLAC+1])                    #6
-adda([Y,X])                     #7
-adda([sysArgs+6])               #8
-st([vLAC+1])                    #9
-bmi(pc()+5)                     #10
-suba([Y,X])                     #11
-suba([sysArgs+6])               #12
-bra(pc()+5)                     #13
-ora([Y,X])                      #14
-suba([sysArgs+6])               #12
-nop()                           #13
-anda([Y,X])                     #14
-anda(0x80,X)                    #15
-ld([X])                         #16
-st([sysArgs+6])                 #17
-ld('addl#3c')                   #18
-st([fsmState])                  #19
-bra('NEXT')                     #20
-ld(-22/2)                       #21
-
-label('addl#3c')
-ld([vAC+1],Y)                   #3
-ld([sysArgs+5])                 #4 b2
-adda(2,X)                       #5
-ld([vLAC+2])                    #6
-adda([Y,X])                     #7
-adda([sysArgs+6])               #8
-st([vLAC+2])                    #9
-bmi(pc()+5)                     #10
-suba([Y,X])                     #11
-suba([sysArgs+6])               #12
-bra(pc()+5)                     #13
-ora([Y,X])                      #14
-suba([sysArgs+6])               #12
-nop()                           #13
-anda([Y,X])                     #14
-anda(0x80,X)                    #15
-ld([X])                         #16
-st([sysArgs+6])                 #17
-ld([sysArgs+5])                 #18 b3
-adda(3,X)                       #19
-ld([vLAC+3])                    #20
-adda([Y,X])                     #21
-adda([sysArgs+6])               #22
-st([vLAC+3])                    #23
-ld(hi('ENTER'))                 #24
-st([vCpuSelect])                #25
-adda(1,Y)                       #26
-jmp(Y,'NEXTY')                  #27
-ld(-30/2)                       #28
-
-# ----------------------------------------
-# extended addition
-
-label('addx#3a')
-ld([vAC+1],Y)                   #3
-ld([vAC])                       #4
-ld(AC,X)                        #5
-adda(1)                         #6
-st([sysArgs+5])                 #7
-ld([vLAC-1])                    #8 bx
-adda([Y,X])                     #9
-st([vLAC-1])                    #10
-bmi(pc()+4)                     #11
-suba([Y,X])                     #12
-bra(pc()+4)                     #13
-ora([Y,X])                      #14
-nop()                           #13
-anda([Y,X])                     #14
-anda(0x80,X)                    #15
-ld([X])                         #16
-st([sysArgs+6])                 #17
-ld('addx#3b')                   #18
-label('fsm1anext#19')
-st([fsmState])                  #19
-bra('NEXT')                     #20
-ld(-22/2)                       #21
-
-label('addx#3b')
-ld([vAC+1],Y)                   #3
-ld([sysArgs+5],X)               #4
-ld([vLAC])                      #5 b0
-adda([Y,X])                     #6
-adda([sysArgs+6])               #7
-st([vLAC])                      #8
-bmi(pc()+5)                     #9
-suba([Y,X])                     #10
-suba([sysArgs+6])               #11
-bra(pc()+5)                     #12
-ora([Y,X])                      #13
-suba([sysArgs+6])               #11
-nop()                           #12
-anda([Y,X])                     #13
-anda(0x80,X)                    #14
-ld([X])                         #15
-st([sysArgs+6])                 #16
-bra('fsm1anext#19')             #17
-ld('addl#3b')                   #18
-
-# ----------------------------------------
-# long subtraction
+# SUBL implementation
 
 label('subl#3a')
 ld([vAC+1],Y)                   #3
@@ -8811,7 +8679,7 @@ jmp(Y,'NEXTY')                  #25
 ld(-28/2)                       #26
 
 # ----------------------------------------
-# long bitwise boolean ops
+# long bitwise ops: ANDL ORL XORL
 
 label('andl#3a')
 ld([vAC+1],Y)                   #3
@@ -8830,11 +8698,13 @@ anda([vLAC+2])                  #15
 st([vLAC+2])                    #16
 ld([Y,X])                       #17
 anda([vLAC+3])                  #18
-st([vLAC+3])                    #19
+nop()                           #19
+label('andl#20a')
 bra('fsm1anexty#22')            #20
+st([vLAC+3])                    #21
 
 label('orl#3a')
-ld([vAC+1],Y)                   #3
+ld([vAC+1],Y)                   #3,21
 ld([vAC],X)                     #4
 ld([Y,X])                       #5
 st([Y,Xpp])                     #6
@@ -8849,12 +8719,11 @@ st([Y,Xpp])                     #14
 ora([vLAC+2])                   #15
 st([vLAC+2])                    #16
 ld([Y,X])                       #17
-ora([vLAC+3])                   #18
-st([vLAC+3])                    #19
-bra('fsm1anexty#22')            #20
+bra('andl#20a')                 #18
+ora([vLAC+3])                   #19
 
 label('xorl#3a')
-ld([vAC+1],Y)                   #3
+ld([vAC+1],Y)                   #3,21
 ld([vAC],X)                     #4
 ld([Y,X])                       #5
 st([Y,Xpp])                     #6
@@ -8869,15 +8738,166 @@ st([Y,Xpp])                     #14
 xora([vLAC+2])                  #15
 st([vLAC+2])                    #16
 ld([Y,X])                       #17
-xora([vLAC+3])                  #18
-st([vLAC+3])                    #19
-bra('fsm1anexty#22')            #20
-nop()                           #21
+bra('andl#20a')                 #18
+xora([vLAC+3])                  #19
+
+
+# ----------------------------------------
+# LDFAC LDFARG
+
+# LDFAC implementation
+label('ldfac#3a')
+ld([vAC],X)                     #3
+ld([vAC+1],Y)                   #4
+ld([Y,X])                       #5
+beq('ldfac#8a')                 #6
+st([vFAE])                      #7 exponent
+ld([vAC])                       #8
+adda(1,X)                       #9
+anda(0xfc)                      #10
+xora(0xfc)                      #11
+beq('ldfac#14a')                #12
+ld('ldfac#3c')                  #13
+st([fsmState])                  #14
+ld([Y,X])                       #15 no crossings
+st([Y,Xpp])                     #16
+st([vLAX+4])                    #17
+ld([Y,X])                       #18
+st([Y,Xpp])                     #19
+st([vLAX+3])                    #20
+ld([Y,X])                       #21
+st([Y,Xpp])                     #22
+st([vLAX+2])                    #23
+ld([Y,X])                       #24
+st([vLAX+1])                    #25
+bra('NEXT')                     #26
+ld(-28/2)                       #27
+
+label('ldfac#8a')
+nop()                           #8
+ld(vLAX,X)                      #9
+label('ldfacrg#10a')
+ld(0,Y)                         #10
+st([Y,Xpp])                     #11
+st([Y,Xpp])                     #12
+st([Y,Xpp])                     #13
+st([Y,Xpp])                     #14
+st([Y,X])                       #15
+label('ldfacrg#16')
+ld(hi('ENTER'))                 #16
+st([vCpuSelect])                #17
+adda(1,Y)                       #18
+jmp(Y,'NEXTY')                  #19
+ld(-22/2)                       #20
+
+label('ldfac#14a')
+st([sysArgs+6])                 #14 page crossings
+nop()                           #15
+ld(vLAX)                        #16
+label('ldfacrg#17a')
+st([vT3+1])                     #17
+adda(4)                         #18
+st([vT3])                       #19
+ld('ldfacrg#3b')                #20 to slow copy
+st([fsmState])                  #21
+bra('NEXT')                     #22
+ld(-24/2)                       #23
+
+label('ldfacrg#3b')
+ld(1)                           #3
+adda([vAC])                     #4
+st([vAC],X)                     #5
+beq('ldfacrg#3b')               #6
+bra(pc()+2)                     #7
+ld(0)                           #8
+adda([vAC+1])                   #9
+st([vAC+1],Y)                   #10
+ld([Y,X])                       #11
+ld([vT3],X)                     #12
+st([X])                         #13
+ld([vT3])                       #14
+suba(1)                         #15
+st([vT3])                       #16
+xora([vT3+1])                   #17
+bne('NEXT')                     #18
+ld(-20/2)                       #19
+ld([sysArgs+6])                 #20
+st([fsmState])                  #21
+bra('NEXT')                     #22
+ld(-24/2)                       #23
+
+label('ldfac#3c')
+ld(0)                           #3
+st([vLAX])                      #4 mantissa extension
+ld([vLAX+4])                    #5
+xora([vFAS])                    #6 sign
+anda(0x80)                      #7
+ld(AC,X)                        #8
+ora([X])                        #9
+xora([vFAS])                    #10
+st([vFAS])                      #11
+ld([vLAX+4])                    #12 high byte
+ora(0x80)                       #13
+bra('ldfacrg#16')               #14
+st([vLAX+4])                    #16
+
+# LDFARG implementation
+label('ldfarg#3a')
+ld([vAC],X)                     #3
+ld([vAC+1],Y)                   #4
+ld([Y,X])                       #5
+beq('ldfarg#8a')                #6
+st([vT2])                       #7
+ld([vAC])                       #8
+adda(1,X)                       #9
+anda(0xfc)                      #10
+xora(0xfc)                      #11
+beq('ldfarg#14a')               #12
+ld('ldfarg#3c')                 #13
+st([fsmState])                  #14
+ld([Y,X])                       #15
+st([Y,Xpp])                     #16
+st([sysArgs+4])                 #17
+ld([Y,X])                       #18
+st([Y,Xpp])                     #19
+st([sysArgs+3])                 #20
+ld([Y,X])                       #21
+st([Y,Xpp])                     #22
+st([sysArgs+2])                 #23
+ld([Y,X])                       #24
+st([sysArgs+1])                 #25
+bra('NEXT')                     #26
+ld(-28/2)                       #27
+
+label('ldfarg#8a')
+bra('ldfacrg#10a')              #8
+ld(sysArgs+0,X)                 #9
+
+label('ldfarg#14a')
+st([sysArgs+6])                 #14 page crossings
+bra('ldfacrg#17a')              #15
+ld(sysArgs+0)                   #16
+
+label('ldfarg#3c')
+ld(0)                           #3
+st([sysArgs+0])                 #4 mantissa extension
+ld([sysArgs+4])                 #5
+xora([vFAS])                    #6 sign
+anda(0x80,X)                    #7
+ld([vFAS])                      #8
+anda(0xfe)                      #9
+ora([X])                        #10
+st([vFAS])                      #11
+ld([sysArgs+4])                 #12 high byte
+ora(0x80)                       #13
+bra('ldfacrg#16')               #14
+st([sysArgs+4])                 #15
+
 
 
 #-----------------------------------------------------------------------
 #
-#   $1B00 ROM page 29: FSM1B for vCPU long arith
+#   $1b00 ROM page 29: FSM1B for vCPU long arith
 #
 #-----------------------------------------------------------------------
 
@@ -8898,72 +8918,85 @@ ld(hi('vBlankStart'),Y)         #6
 jmp(Y,[vReturn])                #7
 ld([channel])                   #8
 
-label('fsm1bop1#21')
-ld(1)                           #21
-adda([vPC])                     #22
-st([vPC])                       #23
-ld(hi('FSM1B_ENTER'))           #24
+# ----------------------------------------
+# ADDL implementation
+
+label('addl#3a')
+ld([vAC+1],Y)                   #3
+ld([vAC])                       #4
+st([sysArgs+5],X)               #5
+ld([Y,X])                       #6 b0
+adda([vLAC])                    #7
+st([vLAC])                      #8
+bmi(pc()+4)                     #9
+suba([Y,X])                     #10
+bra(pc()+4)                     #11
+ora([Y,X])                      #12
+nop()                           #11
+anda([Y,X])                     #12
+anda(0x80,X)                    #13
+ld([X])                         #14
+st([sysArgs+6])                 #15
+ld('addl#3b')                   #16
+st([fsmState])                  #17
+bra('NEXT')                     #18
+ld(-20/2)                       #19
+
+label('addl#3b')
+ld([vAC+1],Y)                   #3
+ld([sysArgs+5])                 #4 b1
+adda(1,X)                       #5
+ld([Y,X])                       #6
+adda([sysArgs+6])               #7
+st([vTmp])                      #8
+adda([vLAC+1])                  #9
+st([vLAC+1])                    #10
+bmi(pc()+4)                     #11
+suba([vTmp])                    #12
+bra(pc()+4)                     #13
+ora([Y,X])                      #14
+nop()                           #13
+anda([Y,X])                     #14
+anda(0x80,X)                    #15
+ld([X])                         #16
+st([sysArgs+6])                 #17
+ld('addl#3c')                   #18
+st([fsmState])                  #19
+bra('NEXT')                     #20
+ld(-22/2)                       #21
+
+label('addl#3c')
+ld([vAC+1],Y)                   #3
+ld([sysArgs+5])                 #4 b2
+adda(2,X)                       #5
+ld([Y,X])                       #6
+adda([sysArgs+6])               #7
+st([vTmp])                      #8
+adda([vLAC+2])                  #9
+st([vLAC+2])                    #10
+bmi(pc()+4)                     #11
+suba([vTmp])                    #12
+bra(pc()+4)                     #13
+ora([Y,X])                      #14
+nop()                           #13
+anda([Y,X])                     #14
+anda(0x80,X)                    #15
+ld([X])                         #16
+st([sysArgs+6])                 #17
+ld([sysArgs+5])                 #18 b3
+adda(3,X)                       #19
+ld([Y,X])                       #20
+adda([sysArgs+6])               #21
+adda([vLAC+3])                  #22
+st([vLAC+3])                    #23
+ld(hi('ENTER'))                 #24
 st([vCpuSelect])                #25
-bra('NEXT')                     #26
-ld(-28/2)                       #27
+adda(1,Y)                       #26
+jmp(Y,'NEXTY')                  #27
+ld(-30/2)                       #28
 
 # ----------------------------------------
-# NOTVL NEGVL NEGX
-
-label('notvl#3a')
-ld(0,Y)                         #3
-ld([sysArgs+6],X)               #4
-ld(0xff)                        #5
-xora([Y,X])                     #6
-st([Y,Xpp])                     #7
-nop()                           #8
-nop()                           #9
-label('notvl#10a')
-ld(0xff)                        #10
-xora([Y,X])                     #11
-st([Y,Xpp])                     #12
-nop()                           #13
-label('notvl#14a')
-ld(0xff)                        #14
-xora([Y,X])                     #15
-st([Y,Xpp])                     #16
-ld(0xff)                        #17
-label('notvl#18a')
-xora([Y,X])                     #18
-st([Y,X])                       #19
-label('fsm1bnexty#20')
-ld(hi('ENTER'))                 #20
-st([vCpuSelect])                #21
-adda(1,Y)                       #22
-jmp(Y,'NEXTY')                  #23
-ld(-26/2)                       #24
-
-label('negvl#3a')
-ld(0,Y)                         #3
-ld([sysArgs+6],X)               #4
-ld(0)                           #5
-suba([Y,X])                     #6
-st([Y,Xpp])                     #7
-bne('notvl#10a')                #8
-ld(0)                           #9
-suba([Y,X])                     #10
-st([Y,Xpp])                     #11
-bne('notvl#14a')                #12
-ld(0)                           #13
-suba([Y,X])                     #14
-st([Y,Xpp])                     #15
-bne('notvl#18a')                #16
-ld(0xff)                        #17
-ld(0)                           #18
-suba([Y,X])                     #19
-st([Y,X])                       #20
-nop()                           #21
-label('fsm1bnexty#22')
-ld(hi('ENTER'))                 #22
-st([vCpuSelect])                #23
-adda(1,Y)                       #24
-jmp(Y,'NEXTY')                  #25
-ld(-28/2)                       #26
+# NEGX NEGVL
 
 label('negx#3a')
 ld(vLAC)                        #3
@@ -8977,200 +9010,217 @@ ld('notvl#3a')                  #10
 ld('negvl#3a')                  #10
 st([fsmState])                  #11
 bra('NEXT')                     #12
-ld(-14/2)                       #13
+
+label('notvl#3a')
+ld(-14/2)                       #13,3
+ld(0,Y)                         #4
+ld([sysArgs+6],X)               #5
+ld(0xff)                        #6
+xora([Y,X])                     #7
+st([Y,Xpp])                     #8
+label('notvl#9a')
+ld(0xff)                        #9
+xora([Y,X])                     #10
+st([Y,Xpp])                     #11
+label('notvl#12a')
+ld(0xff)                        #12
+xora([Y,X])                     #13
+st([Y,Xpp])                     #14
+label('notvl#15a')
+ld(0xff)                        #15
+xora([Y,X])                     #16
+label('notvl#17a')
+st([Y,X])                       #17
+ld(hi('ENTER'))                 #18
+st([vCpuSelect])                #19
+adda(1,Y)                       #20
+jmp(Y,'NEXTY')                  #21
+ld(-24/2)                       #22
+
+label('negvl#3a')
+ld(0,Y)                         #3
+ld([sysArgs+6],X)               #4
+ld(0)                           #5
+suba([Y,X])                     #6
+bne('notvl#9a')                 #7
+st([Y,Xpp])                     #8
+suba([Y,X])                     #9
+bne('notvl#12a')                #10
+st([Y,Xpp])                     #11
+suba([Y,X])                     #12
+bne('notvl#15a')                #13
+st([Y,Xpp])                     #14
+bra('notvl#17a')                #15
+suba([Y,X])                     #16
+
+
 
 # ----------------------------------------
 # LSLVL
 
 label('lslvl#3a')
-ld('lslvl#3b')                  #3
-st([fsmState])                  #4
-ld([sysArgs+6],X)               #5
-ld(0,Y)                         #6
-ld([Y,X])                       #7  b0
-blt(pc()+5)                     #8
-adda(AC)                        #9
-st([Y,Xpp])                     #10
-bra(pc()+5)                     #11
-ld(0)                           #12
-st([Y,Xpp])                     #10
-nop()                           #11
-ld(1)                           #12
-st([sysArgs+5])                 #13
-ld([Y,X])                       #14 b1
-blt(pc()+6)                     #15
-adda(AC)                        #16
-adda([sysArgs+5])               #17
-st([Y,X])                       #18
-bra(pc()+6)                     #19
-ld(0)                           #20
-adda([sysArgs+5])               #17
-st([Y,X])                       #18
-nop()                           #19
-ld(1)                           #20
-st([sysArgs+5])                 #21
-bra('NEXT')                     #22
-ld(-24/2)                       #23
-
-label('lslvl#3b')
 ld(0,Y)                         #3
-ld([sysArgs+6])                 #4
-adda(2,X)                       #5
-ld([Y,X])                       #6 b2
-blt(pc()+6)                     #7
-adda(AC)                        #8
-adda([sysArgs+5])               #9
-st([Y,Xpp])                     #10
-bra(pc()+6)                     #11
-ld(0)                           #12
-adda([sysArgs+5])               #9
-st([Y,Xpp])                     #10
-nop()                           #11
-ld(1)                           #12 b3
-adda([Y,X])                     #13
-adda([Y,X])                     #14
-st([Y,X])                       #15
-label('fsm1bnexty#16')
-ld(hi('ENTER'))                 #16
-st([vCpuSelect])                #17
-adda(1,Y)                       #18
-jmp(Y,'NEXTY')                  #19
-ld(-22/2)                       #20
+ld([sysArgs+6],X)               #4
+ld([Y,X])                       #5  b0
+blt('lslvl#8aa' )               #6
+adda([Y,X])                     #7
+st([Y,Xpp])                     #8
+ld([Y,X])                       #9  b1
+nop()                           #10
+blt('lslvl#13aa')               #11
+label('lslvl#12a')
+adda([Y,X])                     #12
+st([Y,Xpp])                     #13
+ld([Y,X])                       #14  b2
+nop()                           #15
+blt('lslvl#18aa')               #16
+label('lslvl#17a')
+adda([Y,X])                     #17
+st([Y,Xpp])                     #18
+ld([Y,X])                       #19  b3
+bra('lslvl#22aa')               #20
+adda([Y,X])                     #21
+
+label('lslvl#8aa')
+st([Y,Xpp])                     #8
+ld([Y,X])                       #9 b1
+bpl('lslvl#12a')                #10
+adda(1)                         #11
+adda([Y,X])                     #12
+label('lslvl#13aa')
+st([Y,Xpp])                     #13
+ld([Y,X])                       #14 b2
+bpl('lslvl#17a')                #15
+adda(1)                         #16
+adda([Y,X])                     #17
+label('lslvl#18aa')
+st([Y,Xpp])                     #18
+ld([Y,X])                       #19 b3
+adda(1)                         #20
+adda([Y,X])                     #21
+label('lslvl#22aa')
+st([Y,X])                       #22
+ld(hi('ENTER'))                 #23
+st([vCpuSelect])                #24
+adda(1,Y)                       #25
+jmp(Y,'REENTER')                #26
+ld(-30/2)                       #27
 
 
 # ----------------------------------------
 # INCVL
 
 label('incvl#3a')
-ld([sysArgs+6],X)               #3
-ld(0,Y)                         #4
-ld(1)                           #5
-adda([Y,X])                     #6
-st([Y,Xpp])                     #7
-bne('incvl#xa')                 #8
-ld(-18/2)                       #9
-ld(1)                           #10
-adda([Y,X])                     #11
-st([Y,Xpp])                     #12
-bne('incvl#xb')                 #13
-ld(-22/2)                       #14
+ld(hi('ENTER'))                 #3
+st([vCpuSelect])                #4
+ld([sysArgs+6],X)               #5
+ld(0,Y)                         #6
+ld(1)                           #7
+adda([Y,X])                     #8
+st([Y,Xpp])                     #9
+bne('incvl#12')                 #10
+ld(1)                           #11
+adda([Y,X])                     #12
+st([Y,Xpp])                     #13
+bne('incvl#16')                 #14
 ld(1)                           #15
 adda([Y,X])                     #16
 st([Y,Xpp])                     #17
-bne('incvl#xa')                 #18
-ld(-28/2)                       #19
-ld(1)                           #20
-adda([Y,X])                     #21
-st([Y,X])                       #22
-ld(hi('ENTER'))                 #23
-st([vCpuSelect])                #24
-adda(1,Y)                       #25
-ld(-30/2)                       #26
-jmp(Y,'NEXTY')                  #27
-label('incvl#xa')
-nop()                           #28,-8
-label('incvl#xb')
-st([vTmp])                      #-7
-ld(hi('ENTER'))                 #-6
-st([vCpuSelect])                #-5
-adda(1,Y)                       #-4
-jmp(Y,'NEXTY')                  #-3
-ld([vTmp])                      #-2
-
-# ----------------------------------------
-# CMPLS CMPLU
-
-label('cmpls#3a')
-ld([vAC+1],Y)                   #3
-ld([vAC])                       #4
-adda(3,X)                       #5
-ld([vLAC+3])                    #6 B3
-xora([Y,X])                     #7
-beq('cmpl#10a')                 #8 -> next byte
-blt('cmpls#11')                 #9 -> different msb
-xora([Y,X])                     #10
-bra('cmpl#13')                  #11
-suba([Y,X])                     #12
-label('cmpls#11')
-bra('cmpl#13')                  #11
-ora(1)                          #12
-
-label('cmplu#3a')
-ld([vAC+1],Y)                   #3
-ld([vAC])                       #4
-adda(3,X)                       #5
-ld([vLAC+3])                    #6 B3
-xora([Y,X])                     #7
-beq('cmpl#10a')                 #8 -> next byte
-blt('cmpl#11')                  #9 -> different msb
-xora([Y,X])                     #10
-bra('cmpl#13')                  #11
-suba([Y,X])                     #12
-label('cmpl#11')
-xora(0x80)                      #11
-ora(1)                          #12
-label('cmpl#13')
-st([vAC+1])                     #13
-ld(hi('ENTER'))                 #14
-st([vCpuSelect])                #15
-adda(1,Y)                       #16
-jmp(Y,'NEXTY')                  #17
-ld(-20/2)                       #18
-label('cmpl#10a')
-ld([vAC])                       #10 next byte
-adda(2,X)                       #11
-ld([vLAC+2])                    #12 B2
-xora([Y,X])                     #13
-beq('cmpl#16a')                 #14 -> next byte
-blt('cmpl#17')                  #15 -> different msb
-xora([Y,X])                     #16
-bra('cmpl#19')                  #17
-suba([Y,X])                     #18
-label('cmpl#17')
-xora(0x80)                      #17
-ora(1)                          #18
-label('cmpl#19')
-st([vAC+1])                     #19
-ld(hi('ENTER'))                 #20
-st([vCpuSelect])                #21
-adda(1,Y)                       #22
+bne('incvl#20')                 #18
+ld(1)                           #19
+adda([Y,X])                     #20
+st([Y,X])                       #21
+ld(hi('NEXTY'),Y)               #22
 jmp(Y,'NEXTY')                  #23
 ld(-26/2)                       #24
-label('cmpl#16a')
-ld('cmpl#3b')                   #16 next byte
-st([fsmState])                  #17
-bra('NEXT')                     #18
-ld(-20/2)                       #19
-
-label('cmpl#3b')
-ld([vAC+1],Y)                   #3
-ld([vAC])                       #4
-adda(1,X)                       #5
-ld([vLAC+1])                    #6 B1
-xora([Y,X])                     #7
-beq('cmpl#10b')                 #8 -> next byte
-blt('cmpl#11')                  #9 -> different msb
-xora([Y,X])                     #10
-bra('cmpl#13')                  #11
-suba([Y,X])                     #12
-label('cmpl#10b')
-ld([vAC],X)                     #10 next byte
-nop()                           #11
-ld([vLAC])                      #12 B0
-xora([Y,X])                     #13
-beq('cmpl#16b')                 #14 -> equal!
-blt('cmpl#17')                  #15 -> different msb
-xora([Y,X])                     #16
-bra('cmpl#19')                  #17
-suba([Y,X])                     #18
-label('cmpl#16b')
-st([vAC])                       #16 equal!
-st([vAC+1])                     #17
-ld(hi('ENTER'))                 #18
-st([vCpuSelect])                #19
-adda(1,Y)                       #20
+label('incvl#20')
+ld(hi('NEXTY'),Y)               #20
 jmp(Y,'NEXTY')                  #21
 ld(-24/2)                       #22
+label('incvl#16')
+ld(hi('NEXTY'),Y)               #16
+jmp(Y,'NEXTY')                  #17
+ld(-20/2)                       #18
+label('incvl#12')
+ld(hi('NEXTY'),Y)               #12
+jmp(Y,'NEXTY')                  #13
+ld(-16/2)                       #14
+
+
+# ----------------------------------------
+# MOVL MOVF
+
+# MOVL implementation
+label('movl#3a')
+ld(0,Y)                         #3
+ld([sysArgs+6])                 #4
+adda(1,X)                       #5
+ld([Y,X])                       #6
+st([Y,Xpp])                     #7
+st([sysArgs+1])                 #8
+ld([Y,X])                       #9
+st([Y,Xpp])                     #10
+st([sysArgs+2])                 #11
+ld([Y,X])                       #12
+st([sysArgs+3])                 #13
+ld([sysArgs+6],X)               #14
+ld([Y,X])                       #15
+ld([sysArgs+5],X)               #16
+st([Y,Xpp])                     #17
+ld([sysArgs+1])                 #18
+st([Y,Xpp])                     #19
+ld([sysArgs+2])                 #20
+st([Y,Xpp])                     #21
+ld([sysArgs+3])                 #22
+st([Y,Xpp])                     #23
+ld(hi('ENTER'))                 #24
+st([vCpuSelect])                #25
+ld(hi('NEXTY'),Y)               #26
+jmp(Y,'NEXTY')                  #27
+ld(-30/2)                       #28
+
+# MOVF implementation
+label('movf#3a')
+adda(min(0,maxTicks-38/2))      #3
+blt('movf#6a')                  #4
+ld(0,Y)                         #5
+ld([sysArgs+6],X)               #6
+ld([Y,X])                       #7
+st([Y,Xpp])                     #8
+st([sysArgs+0])                 #9
+ld([Y,X])                       #10
+st([Y,Xpp])                     #11
+st([sysArgs+1])                 #12
+ld([Y,X])                       #13
+st([Y,Xpp])                     #14
+st([sysArgs+2])                 #15
+ld([Y,X])                       #16
+st([Y,Xpp])                     #17
+st([sysArgs+3])                 #18
+ld([Y,X])                       #19
+st([sysArgs+4])                 #20
+ld([sysArgs+5],X)               #21
+ld([sysArgs+0])                 #22
+st([Y,Xpp])                     #23
+ld([sysArgs+1])                 #24
+st([Y,Xpp])                     #25
+ld([sysArgs+2])                 #26
+st([Y,Xpp])                     #27
+ld([sysArgs+3])                 #28
+st([Y,Xpp])                     #29
+ld([sysArgs+4])                 #30
+st([Y,Xpp])                     #31
+ld(hi('ENTER'))                 #32
+st([vCpuSelect])                #33
+ld(hi('NEXTY'),Y)               #34
+jmp(Y,'NEXTY')                  #35
+ld(-38/2)                       #36
+label('movf#6a')
+bra('NEXT')                     #6
+ld(-8/2)                        #7
+
+
+
 
 
 #-----------------------------------------------------------------------
@@ -9439,62 +9489,53 @@ st([X])                         #23
 bra('NEXT')                     #24
 ld(-26/2)                       #25
 
+# ------------------------------
+# DEPRECATED ADDX (COMPAT ONLY)
+# WILL BE REMOVED
 
-#----------------------------------------
-# STFAC
-
-
-# STFAC implementation
-label('stfac#3a')
-ld([vFAE])                      #3 construct fp5
-st([sysArgs+0])                 #4 in sysArgs[0..4]
-beq('stfac#7a')                 #5
-ld([vFAS])                      #6
-ora(0x7f)                       #7
-anda([vLAX+4])                  #8
-st([sysArgs+1])                 #9
-ld([vLAX+3])                    #10
-st([sysArgs+2])                 #11
-ld([vLAX+2])                    #12
-st([sysArgs+3])                 #13
-ld([vLAX+1])                    #14
-st([sysArgs+4])                 #15
-label('stfac#16a')
-ld('stfac#3b')                  #16
-st([fsmState])                  #17
-bra('NEXT')                     #18
-ld(-20/2)                       #19
-
-label('stfac#7a')
-st([vLAX+4])                    #7 zero
-st([sysArgs+1])                 #8
-st([vLAX+3])                    #9
-st([sysArgs+2])                 #10
-st([vLAX+2])                    #11
-st([sysArgs+3])                 #12
-st([vLAX+3])                    #13
-bra('stfac#16a')                #14
-st([sysArgs+4])                 #15
-
-label('stfac#3b')
-ld([vAC])                       #3 prepare copyn
-st([vT2])                       #4
-ld([vAC+1])                     #5
-st([vT2+1])                     #6
-ld(0)                           #7
-st([vT3+1])                     #8
-ld(sysArgs+0)                   #9
-st([vT3])                       #10
-ld(5)                           #11
-st([sysArgs+6])                 #12
-ld('copy#3a')                   #13
-st([fsmState])                  #14
-ld(hi('FSM18_ENTER'))           #15 change fsm
-st([vCpuSelect])                #16
-ld(hi('FSM18_NEXT'),Y)          #17
-jmp(Y,'FSM18_NEXT')             #18
-ld(-20/2)                       #19
-
+label('addx#3a')
+adda(min(0,maxTicks-38/2) )     #3
+bge('addx#6a')                  #4
+ld([vAC+1],Y)                   #5
+bra('NEXT')                     #6
+ld(-8/2)                        #7
+label('addx#6a')
+ld([vAC])                       #6
+ld(AC,X)                        #7
+adda(1)                         #8
+st([sysArgs+5])                 #9
+ld([vLAC-1])                    #10 bx
+adda([Y,X])                     #11
+st([vLAC-1])                    #12
+bmi(pc()+4)                     #13
+suba([Y,X])                     #14
+bra(pc()+4)                     #15
+ora([Y,X])                      #16
+nop()                           #15
+anda([Y,X])                     #16
+anda(0x80,X)                    #17
+ld([X])                         #18 b0
+ld([sysArgs+5],X)               #19 
+adda([Y,X])                     #20
+st([vTmp])                      #21
+adda([vLAC])                    #22
+st([vLAC])                      #23
+bmi(pc()+4)                     #24
+suba([vTmp])                    #25
+bra(pc()+4)                     #26
+ora([Y,X])                      #27
+nop()                           #26
+anda([Y,X])                     #27
+anda(0x80,X)                    #28
+ld([X])                         #29
+st([sysArgs+6])                 #30
+ld('addl#3b')                   #31
+st([fsmState])                  #32
+ld(hi('FSM1B_ENTER'))           #33
+st([vCpuSelect])                #34
+adda(1,Y)                       #35
+jmp(Y,'NEXT')                   #36
+ld(-38/2)                       #37
 
 
 #-----------------------------------------------------------------------
@@ -9804,105 +9845,100 @@ ld(hi('vBlankStart'),Y)         #6
 jmp(Y,[vReturn])                #7
 ld([channel])                   #8
 
-#----------------------------------------
-# STXW LDXW
+# ----------------------------------------
+# CMPLS CMPLU
 
-# STXW implementation
-label('stxw#13')
-adda(1)                         #13
-st([sysArgs+6])                 #14
-ld([vPC])                       #15
-adda(2)                         #16
-st([vPC],X)                     #17
-ld([vPC+1],Y)                   #18
-ld([Y,X])                       #19
-st([Y,Xpp])                     #20
-st([sysArgs+4])                 #21 immlo
-ld([Y,X])                       #22
-st([sysArgs+5])                 #23 immhi
-ld('stxw#3a')                   #24
-st([fsmState])                  #25
-ld(hi('FSM1E_ENTER'))           #26
-st([vCpuSelect])                #27
-bra('NEXT')                     #28
-ld(-30/2)                       #29
+label('cmpls#3a')
+ld([vAC+1],Y)                   #3
+ld([vAC])                       #4
+adda(3,X)                       #5
+ld([vLAC+3])                    #6 B3
+xora([Y,X])                     #7
+beq('cmpl#10a')                 #8 -> next byte
+blt('cmpls#11')                 #9 -> different msb
+xora([Y,X])                     #10
+bra('cmpl#13')                  #11
+suba([Y,X])                     #12
+label('cmpls#11')
+bra('cmpl#13')                  #11
+ora(1)                          #12
 
-label('stxw#3a')
-ld([sysArgs+6])                 #3
-suba(1,X)                       #4
-ld([sysArgs+4])                 #5 immlo
-adda([X])                       #6 +vlo
-st([sysArgs+4])                 #7
-bmi(pc()+4)                     #8
-suba([X])                       #9
-bra(pc()+4)                     #10
-ora([X])                        #11
-nop()                           #10
-anda([X])                       #11
-anda(0x80,X)                    #12
-ld([X])                         #13 carry
-ld([sysArgs+6],X)               #14
-adda([X])                       #15 +vhi
-adda([sysArgs+5],Y)             #16 +immhi
-ld([sysArgs+4],X)               #17
-ld([vAC])                       #18
-st([Y,Xpp])                     #19
-ld([vAC+1])                     #20
-st([Y,X])                       #21
-ld(hi('ENTER'))                 #22
-st([vCpuSelect])                #23
-adda(1,Y)                       #24
-jmp(Y,'NEXTY')                  #25
-ld(-28/2)                       #26
+label('cmplu#3a')
+ld([vAC+1],Y)                   #3
+ld([vAC])                       #4
+adda(3,X)                       #5
+ld([vLAC+3])                    #6 B3
+xora([Y,X])                     #7
+beq('cmpl#10a')                 #8 -> next byte
+blt('cmpl#11')                  #9 -> different msb
+xora([Y,X])                     #10
+bra('cmpl#13')                  #11
+suba([Y,X])                     #12
+label('cmpl#11')
+xora(0x80)                      #11
+ora(1)                          #12
+label('cmpl#13')
+st([vAC+1])                     #13
+ld(hi('ENTER'))                 #14
+st([vCpuSelect])                #15
+adda(1,Y)                       #16
+jmp(Y,'NEXTY')                  #17
+ld(-20/2)                       #18
+label('cmpl#10a')
+ld([vAC])                       #10 next byte
+adda(2,X)                       #11
+ld([vLAC+2])                    #12 B2
+xora([Y,X])                     #13
+beq('cmpl#16a')                 #14 -> next byte
+blt('cmpl#17')                  #15 -> different msb
+xora([Y,X])                     #16
+bra('cmpl#19')                  #17
+suba([Y,X])                     #18
+label('cmpl#17')
+xora(0x80)                      #17
+ora(1)                          #18
+label('cmpl#19')
+st([vAC+1])                     #19
+ld(hi('ENTER'))                 #20
+st([vCpuSelect])                #21
+adda(1,Y)                       #22
+jmp(Y,'NEXTY')                  #23
+ld(-26/2)                       #24
+label('cmpl#16a')
+ld('cmpl#3b')                   #16 next byte
+st([fsmState])                  #17
+bra('NEXT')                     #18
+ld(-20/2)                       #19
 
-# LDXW implementation
-label('ldxw#13')
-adda(1)                         #13
-st([sysArgs+6])                 #14
-ld([vPC])                       #15
-adda(2)                         #16
-st([vPC],X)                     #17
-ld([vPC+1],Y)                   #18
-ld([Y,X])                       #19
-st([Y,Xpp])                     #20
-st([sysArgs+4])                 #21 immlo
-ld([Y,X])                       #22
-st([sysArgs+5])                 #23 immhi
-ld('ldxw#3a')                   #24
-st([fsmState])                  #25
-ld(hi('FSM1E_ENTER'))           #26
-st([vCpuSelect])                #27
-bra('NEXT')                     #28
-ld(-30/2)                       #29
-
-label('ldxw#3a')
-ld([sysArgs+6])                 #3
-suba(1,X)                       #4
-ld([sysArgs+4])                 #5 immlo
-adda([X])                       #6 +vlo
-st([sysArgs+4])                 #7
-bmi(pc()+4)                     #8
-suba([X])                       #9
-bra(pc()+4)                     #10
-ora([X])                        #11
-nop()                           #10
-anda([X])                       #11
-anda(0x80,X)                    #12
-ld([X])                         #13 carry
-ld([sysArgs+6],X)               #14
-adda([X])                       #15 +vhi
-adda([sysArgs+5],Y)             #16 +immhi
-ld([sysArgs+4],X)               #17
-ld([Y,X])                       #18
-st([Y,Xpp])                     #19
-st([vAC])                       #20
-ld([Y,X])                       #21
-st([vAC+1])                     #22
-ld(hi('ENTER'))                 #23
-st([vCpuSelect])                #24
-adda(1,Y)                       #25
-jmp(Y,'REENTER')                #26
-ld(-30/2)                       #27
+label('cmpl#3b')
+ld([vAC+1],Y)                   #3
+ld([vAC])                       #4
+adda(1,X)                       #5
+ld([vLAC+1])                    #6 B1
+xora([Y,X])                     #7
+beq('cmpl#10b')                 #8 -> next byte
+blt('cmpl#11')                  #9 -> different msb
+xora([Y,X])                     #10
+bra('cmpl#13')                  #11
+suba([Y,X])                     #12
+label('cmpl#10b')
+ld([vAC],X)                     #10 next byte
+nop()                           #11
+ld([vLAC])                      #12 B0
+xora([Y,X])                     #13
+beq('cmpl#16b')                 #14 -> equal!
+blt('cmpl#17')                  #15 -> different msb
+xora([Y,X])                     #16
+bra('cmpl#19')                  #17
+suba([Y,X])                     #18
+label('cmpl#16b')
+st([vAC])                       #16 equal!
+st([vAC+1])                     #17
+ld(hi('ENTER'))                 #18
+st([vCpuSelect])                #19
+adda(1,Y)                       #20
+jmp(Y,'NEXTY')                  #21
+ld(-24/2)                       #22
 
 # ----------------------------------------
 # LSLXA
@@ -9910,34 +9946,31 @@ ld(-30/2)                       #27
 label('lslxa#3a')
 ld([vAC])                       #3
 anda(0x3f)                      #4
-beq('lslxa#7a')                 #5
-suba(8)                         #6
-blt('lslxa#9a')                 #7
-nop()                           #8
-st([vAC])                       #9
-ld([vLAX+3])                    #10
-st([vLAX+4])                    #11
-ld([vLAX+2])                    #12
-st([vLAX+3])                    #13
-ld([vLAX+1])                    #14
-st([vLAX+2])                    #15
-ld([vLAX+0])                    #16
-st([vLAX+1])                    #17
-ld(0)                           #18
-st([vLAX+0])                    #19
-bra('NEXT')                     #20
-ld(-22/2)                       #21
+suba(8)                         #5
+blt('lslxa#8a')                 #6
+st([vAC])                       #7
+ld([vLAX+3])                    #8
+st([vLAX+4])                    #9
+ld([vLAX+2])                    #10
+st([vLAX+3])                    #11
+ld([vLAX+1])                    #12
+st([vLAX+2])                    #13
+ld([vLAX+0])                    #14
+st([vLAX+1])                    #15
+ld(0)                           #16
+st([vLAX+0])                    #17
+bra('NEXT')                     #18
+ld(-20/2)                       #19
 
-label('lslxa#7a')
-ld(hi('ENTER'))                 #7
-st([vCpuSelect])                #8
-adda(1,Y)                       #9
-jmp(Y,'REENTER')                #10
-ld(-14/2)                       #11
-
-label('lslxa#9a')
-nop()                           #9
-anda(7)                         #10
+label('lslxa#8a')
+anda(7)                         #8
+bne('lslxa#11a')                #9
+ld(hi('NEXTY'),Y)               #10
+ld(hi('ENTER'))                 #11
+st([vCpuSelect])                #12
+jmp(Y,'NEXTY')                  #13
+ld(-16/2)                       #14
+label('lslxa#11a')
 st([vAC])                       #11
 ld('lslxa#3b')                  #12
 st([fsmState])                  #13
@@ -9945,154 +9978,148 @@ bra('NEXT')                     #14
 ld(-16/2)                       #15
 
 label('lslxa#3b')
-adda(min(0,maxTicks-46/2) )     #3
-bge('lslxa#6b')                 #4
-ld([vLAX])                      #5 b0
-bra('NEXT')                     #6
-ld(-8/2)                        #7
-label('lslxa#6b')
-anda(0x80,X)                    #6
-adda(AC)                        #7
-st([vLAX])                      #8
-ld([X])                         #9
-st([vTmp])                      #10
-ld([vLAX+1])                    #11 b1
-anda(0x80,X)                    #12
-adda(AC)                        #13
-adda([vTmp])                    #14
-st([vLAX+1])                    #15
-ld([X])                         #16
-st([vTmp])                      #17
-ld([vLAX+2])                    #18 b2
-anda(0x80,X)                    #19
-adda(AC)                        #20
-adda([vTmp])                    #21
-st([vLAX+2])                    #22
-ld([X])                         #23
-st([vTmp])                      #24
-ld([vLAX+3])                    #25 b3
-anda(0x80,X)                    #26
-adda(AC)                        #27
-adda([vTmp])                    #28
-st([vLAX+3])                    #29
-ld([X])                         #30
-adda([vLAX+4])                  #31 b4
-adda([vLAX+4])                  #32
-st([vLAX+4])                    #33
-ld([vAC])                       #34
-suba(1)                         #35
-st([vAC])                       #36
-ld(hi('REENTER'),Y)             #37
-bgt('NEXT')                     #38
-ld(-40/2)                       #39
-ld(hi('ENTER'))                 #40
-st([vCpuSelect])                #41
-jmp(Y,'REENTER')                #42
-ld(-46/2)                       #43
+adda(min(0,maxTicks-40/2) )     #3
+blt('NEXT')                     #4
+ld(-6/2)                        #5
+ld([vLAX])                      #6 b0
+bmi('lslxa#9bb')                #7
+adda([vLAX])                    #8
+st([vLAX])                      #9
+ld([vLAX+1])                    #10 b1
+nop()                           #11
+bmi('lslxa#14bb')               #12
+label('lslxa#13b')
+adda([vLAX+1])                  #13
+st([vLAX+1])                    #14
+ld([vLAX+2])                    #15 b2
+nop()                           #16
+bmi('lslxa#19bb')               #17
+label('lslxa#18b')
+adda([vLAX+2])                  #18
+st([vLAX+2])                    #19
+ld([vLAX+3])                    #20 b3
+bra('lslxa#23bb')               #21
+anda(0x80,X)                    #22
+
+label('lslxa#9bb')
+st([vLAX])                      #9
+ld([vLAX+1])                    #10 b1
+bpl('lslxa#13b')                #11
+adda(1)                         #12
+adda([vLAX+1])                  #13
+label('lslxa#14bb')
+st([vLAX+1])                    #14
+ld([vLAX+2])                    #15 b2
+bpl('lslxa#18b')                #16
+adda(1)                         #17
+adda([vLAX+2])                  #18
+label('lslxa#19bb')
+st([vLAX+2])                    #19
+ld([vLAX+3])                    #20 b3
+anda(0x80,X)                    #21
+adda(1)                         #22
+label('lslxa#23bb')
+adda([vLAX+3])                  #23
+st([vLAX+3])                    #24
+ld([vLAX+4])                    #25 b4
+adda([vLAX+4])                  #26
+adda([X])                       #27
+st([vLAX+4])                    #28
+ld([vAC])                       #29 finished?
+suba(1)                         #30
+st([vAC])                       #31
+bgt('NEXT')                     #32
+ld(-34/2)                       #33
+ld(hi('ENTER'))                 #34 exit
+st([vCpuSelect])                #35
+adda(1,Y)                       #36
+jmp(Y,'NEXTY')                  #37
+ld(-40/2)                       #38
 
 # ----------------------------------------
-# LDFAC LDFARG
+# STFAC implementation
 
-# LDFAC implementation
-label('ldfac#3a')
-ld([vAC],X)                     #3
+label('stfac#3a')
+ld([vAC+1],Y)                   #3,21
+ld([vFAE])                      #4 
+bne('stfac#7b')                 #5
+ld([vAC],X)                     #6
+st([vLAX])                      #7  zero!
+st([vLAX+1])                    #8
+st([vLAX+2])                    #9
+st([vLAX+3])                    #10
+st([vLAX+4])                    #11
+ld('stfac#3b')                  #12
+st([fsmState])                  #13
+bra('NEXT')                     #14
+ld(-16/2)                       #15
+
+label('stfac#3b')
+ld(1)                           #3
 ld([vAC+1],Y)                   #4
-ld(vLAX)                        #5
-st([vT3+1])                     #6
-ld([Y,X])                       #7
-beq('ldfac#10a')                #8
-st([vFAE])                      #9 exponent
-st([Y,Xpp])                     #10
-ld([vAC])                       #11
-anda(0xfc)                      #12
-xora(0xfc)                      #13
-beq('ldfac#16a')                #14
-ld('ldfac#3c')                  #15
-st([fsmState])                  #16
-ld([Y,X])                       #17 no crossings
-st([Y,Xpp])                     #18
-st([vLAX+4])                    #19
-ld([Y,X])                       #20
-st([Y,Xpp])                     #21
-st([vLAX+3])                    #22
-ld([Y,X])                       #23
-st([Y,Xpp])                     #24
-st([vLAX+2])                    #25
-ld([Y,X])                       #26
-st([vLAX+1])                    #27
-bra('NEXT')                     #28
-ld(-30/2)                       #29
-
-label('ldfac#10a')
-ld([vT3+1],X)                   #10 zero
-ld(0,Y)                         #11
-st([Y,Xpp])                     #12
-st([Y,Xpp])                     #13
-st([Y,Xpp])                     #14
+ld([vAC],X)                     #5
+ld([vFAE])                      #6
+label('stfac#7b')
+st([Y,Xpp])                     #7
+ld([vAC])                       #8
+anda(0xfc)                      #9
+xora(0xfc)                      #10
+beq('stfac#13b')                #11
+ld([vFAS])                      #12 fast
+ora(0x7f)                       #13
+anda([vLAX+4])                  #14
 st([Y,Xpp])                     #15
-st([Y,X])                       #16
-ld(hi('fsm1bnexty#20'),Y)       #17 sigh!
-jmp(Y,'fsm1bnexty#20')          #18
+ld([vLAX+3])                    #16
+st([Y,Xpp])                     #17
+ld([vLAX+2])                    #18
+st([Y,Xpp])                     #19
+ld([vLAX+1])                    #20
+st([Y,X])                       #21
+ld(hi('ENTER'))                 #22
+st([vCpuSelect])                #23
+adda(1,Y)                       #24
+jmp(Y,'NEXTY')                  #25
+ld(-28/2)                       #26
 
-label('ldfac#16a')
-st([sysArgs+6])                 #16 page crossings
-ld('ldfac#3b')                  #17 to slow copy
-st([fsmState])                  #18
-ld([vT3+1])                     #19
-adda(4)                         #20
-st([vT3])                       #21
-bra('NEXT')                     #22
-ld(-24/2)                       #23
+label('stfac#13b')
+ora(0x7f)                       #13 slow!
+anda([vLAX+4])                  #14
+st([sysArgs+5])                 #15 next to save
+ld(vLAX+4)                      #16
+st([sysArgs+6])                 #17
+ld('stfac#3c')                  #18
+st([fsmState])                  #19
+bra('NEXT')                     #20
+ld(-22/2)                       #21
 
-label('ldfac#3b')
-ld(hi('ldfac#10b'),Y)           #3,5
-ld([vAC])                       #4
-adda(1)                         #5
-st([vAC],X)                     #6
-beq(pc()+3)                     #7
-jmp(Y,'ldfac#10b')              #8
-ld(0)                           #9
-ld(1)                           #9!
+label('stfac#3c')
+ld(1)                           #3 slow loop
+adda([vAC])                     #4
+st([vAC],X)                     #5
+beq('stfac#3c')                 #6 ld(1)
+bra(pc()+2)                     #7
+ld(0)                           #8
+adda([vAC+1])                   #9
+st([vAC+1],Y)                   #10
+ld([sysArgs+5])                 #11
+st([Y,X])                       #12
+ld([sysArgs+6])                 #13
+suba(1)                         #14
+st([sysArgs+6],X)               #15
+xora(vLAX)                      #16
+beq('stfac#19c')                #17
+ld([X])                         #18
+st([sysArgs+5])                 #19
+bra('NEXT')                     #20
+ld(-22/2)                       #21
+label('stfac#19c')
+nop()                           #19
+ld(hi('ENTER'))                 #20
+st([vCpuSelect])                #21
+adda(1,Y)                       #22
+jmp(Y,'NEXTY')                  #23
+ld(-26/2)                       #24
 
-label('ldfac#3c')
-ld(hi('ldfac#6c'),Y)            #3,19 validate
-jmp(Y,'ldfac#6c')               #4
-ld(0)                           #5
-
-# LDFARG implementation
-label('ldfarg#3a')
-ld([vAC],X)                     #3
-ld([vAC+1],Y)                   #4
-ld(sysArgs+0)                   #5
-st([vT3+1])                     #6
-ld([Y,X])                       #7
-beq('ldfac#10a')                #8
-st([vT2])                       #9
-st([Y,Xpp])                     #10
-ld([vAC])                       #11
-anda(0xfc)                      #12
-xora(0xfc)                      #13
-beq('ldfac#16a')                #14
-ld('ldfarg#3c')                 #15
-st([fsmState])                  #16
-ld([Y,X])                       #17
-st([Y,Xpp])                     #18
-st([sysArgs+4])                 #19
-ld([Y,X])                       #20
-st([Y,Xpp])                     #21
-st([sysArgs+3])                 #22
-ld([Y,X])                       #23
-st([Y,Xpp])                     #24
-st([sysArgs+2])                 #25
-ld([Y,X])                       #26
-st([sysArgs+1])                 #27
-bra('NEXT')                     #28
-ld(-30/2)                       #29
-
-label('ldfarg#3c')
-ld(hi('ldfarg#6c'),Y)           #3
-jmp(Y,'ldfarg#6c')              #4
-ld(0)                           #5
 
 
 #-----------------------------------------------------------------------
@@ -10280,10 +10307,9 @@ ld([Y,X])                       #18
 st([Y,Xpp])                     #19
 st([vAC])                       #20
 ld([Y,X])                       #21
-st([vAC+1])                     #22
-ld(hi('REENTER'),Y)             #23
-jmp(Y,'REENTER')                #24
-ld(-28/2)                       #25
+ld(hi('REENTER_28'),Y)          #22
+jmp(Y,'REENTER_28')             #23
+st([vAC+1])                     #24
 
 label('ldlw#18')
 ld([vTicks])                    #18 vSPL/vSPH version

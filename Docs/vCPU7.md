@@ -40,21 +40,23 @@ remain equal to zero. Such programs can freely use the memory
 locations assigned to the new vCPU7 registers because none of the
 vCPU5 opcodes are going to change them.
 
-All vCPU5 opcodes are provided with the same encodings. The few
-timing changes are reported below. Conditional branches are two cycles
-faster making up for slightly slower stack operations and indirect
-call.
+All vCPU5 opcodes are provided with the same encodings. The few timing
+changes are reported below. Conditional branches are two cycles
+faster, making up for slightly slower stack operations and indirect
+call operation.
 
 | Opcodes | Notes
 | ------- | ------
-| `BEQ` `BNE` etc. | Now 26 cycles instead of 28
-| `LD`             | Now 20 cycles instead of 22 (v5a: 22, v4: 18)
-| `CALL`           | Now 30 cycles instead of 26 (but `CALLI` is unchanged)
+| `BEQ` `BNE` etc. | ! Now 26 cycles instead of 28
+| `ORW` `ANDW`     | ! Now 26 cycles instead of 28
+| `ADDI` `SUBI`    | ! Now 24 cycles (26 with carry) instead of 28
+| `LD`             | ! Now 20 cycles instead of 22 (v5a: 22, v4: 18)
+| `SUBW`           | Now 30 cycles instead of 27
+| `CALL`           | Now 30 cycles instead of 26
 | `PUSH`           | Now 28 cycles instead of 26 (38 cycles when crossing a page)
 | `POP`            | Now 30 cycles instead of 26 (40 cycles when crossing a page)
 | `ALLOC`          | Now 24 cycles instead of 14 (28-30 cycles when `vSPH`!=0)
-| `LDLW`           | Now 28 cycles instead of 26 (38 when`vSPH`!=0)
-| `STLW`           | Now 28 cycles instead of 26 (38 when`vSPH`!=0)
+| `LDLW` `STLW`    | Now 28 cycles instead of 26 (38 when`vSPH`!=0)
 
 
 ### True 16 bits stack
@@ -185,17 +187,18 @@ or poke opcode.  Better timings would help.
 The following instructions change page zero variables
 without changing the contents of the accumulator `vAC`.
 
-| Opcode | Encoding | Cycles | Function
-| ------ | -------- | -------| -------
-| MOVQB  | `48 VV II`   | 26 | Store immediate `II` into byte `[VV]`
-| MOVQW  | `4a VV II`   | 28 | Store immediate `II` into word `[VV..VV+1]`
+| Opcode | Encoding | Cycles  | Function
+| ------ | -------- | ------- | -------
+| MOVQB  | `48 VV II`    | 26 | Store immediate `II` into byte `[VV]`
+| MOVQW  | `4a VV II`    | 28 | Store immediate `II` into word `[VV..VV+1]`
 | MOVIW  | `b1 VV HH LL` | 30 | Store immediate `HHLL` into word `[VV..VV+1]`
-| INCV   | `70 VV`    | 22 to 28 | Add 1 to word `[VV..VV+1]`
-| ADDV   | `66 VV`      | 30 | Add `vAC` contents to word `[VV..VV+1]`
-| SUBV   | `68 VV`      | 30 | Subtract `vAC` contents from word `[VV..VV+1]`
+| MOVW   | `bc YY XX`    | 36 | Copy var from `[XX..XX+1]` to `[YY..YY+1]`<br>(trashes `sysArgs7`)
+| INCV   | `70 VV`       | 22 to 28 | Add 1 to word `[VV..VV+1]`
+| ADDV   | `66 VV`       | 30 | Add `vAC` contents to word `[VV..VV+1]`
+| SUBV   | `68 VV`       | 30 | Subtract `vAC` contents from word `[VV..VV+1]`
 | ADDIV  | `35 7d II VV` | 38 to 40 | Add immediate `II` to word `[VV..VV+1]`
 | SUBIV  | `35 9c II VV` | 38 to 40 | Subtract immediate `II` from word `[VV..VV+1]`
-| NEGV   | `18 VV`  | 26 | Negates word `[VV..VV+1]`
+| NEGV   | `18 VV`       | 26 | Negates word `[VV..VV+1]`
 
 **History:**
 Many of these instructions were discusssed in
@@ -368,9 +371,9 @@ or `vLAC`.
 
 | Opcode |  Encoding  | Cycles     | Function
 | ------ | ---------- | ---------- | -------
-| INCVL  | `35 23 VV` | max 22+30  | Increment long `[VV..VV+3]`<br>(trashes `sysArgs[67]`)
-| NEGVL  | `35 0c VV` | 28+28      | Negates long `[VV..VV+3]`<br>(trashes `sysArgs[67]`)
-| LSLVL  | `35 10 VV` | 28+24+22   | Left shift long  `[VV..VV+3]`<br>(trashes `sysArgs[67]`)
+| INCVL  | `35 23 VV` | 22+16..26  | Increment long `[VV..VV+3]`<br>(trashes `sysArgs[67]`)
+| NEGVL  | `35 0c VV` | 28+24      | Negates long `[VV..VV+3]`<br>(trashes `sysArgs[67]`)
+| LSLVL  | `35 10 VV` | 28+30      | Left shift long  `[VV..VV+3]`<br>(trashes `sysArgs[67]`)
 
 **History:**
 These are improvements of the long arithmetic opcodes
@@ -392,21 +395,21 @@ point accumulator composed of registers `vFAS` for the sign,
 | Opcode | Encoding      | Cycles     | Function
 | ------ | ----------    | ---------- | -------
 | MOVF   | `35 dd YY XX` | 30+38      | Copy fp number from `[XX..XX+4]` to `[YY..YY+4]`<br>(trashes `sysArgs[0..7]`)
-| LDFAC  | `35 27`       | typ 30+22  | Load fp number `[vAC]..[vAC]+4` into float accumulator<br>(trashes `vT3` `sysArgs[567]`)
-| STFAC  | `35 25`       | typ 110    | Store float accumulator into fp number `[vAC]..[vAC]+4`<br>(trashes `vT3` `sysArgs[567]`)
+| LDFAC  | `35 27`       | typ 72     | Load fp number `[vAC]..[vAC]+4` into float accumulator<br>(trashes `vAC` `vT3` `sysArgs[567]`)
+| STFAC  | `35 25`       | typ 66     | Store float accumulator into fp var `[vAC]..[vAC]+4`<br>(trashes `vAC` `sysArgs[567]`)
 
 Three shift instructions operate on the 40 bits extended accumulator `vLAX`.
 
 | Opcode | Encoding      | Cycles     | Function
 | ------ | ----------    | ---------- | -------
-| LSRXA  | `35 18`       | typ 250    | Right shift `vLAX` by `vAC & 0x3f` positions
-| LSLXA  | `35 12`       | 36 to 350  | Left shift `vLAX` by `vAC & 0x3f` positions
-| RORX   | `35 1a`       | typ 210    | Right rotate `vLAX` from/into bit 0 of `vAC`
+| LSRXA  | `35 18`       | 52 to 324  | Right shift `vLAX` by `vAC & 0x3f` positions
+| LSLXA  | `35 12`       | 36 to 392  | Left shift `vLAX` by `vAC & 0x3f` positions
+| RORX   | `35 1a`       | 212        | Right rotate `vLAX` from/into bit 0 of `vAC`
 
 The following picture illustrates how `RORX` rotate bits:
 ```
-RORX      ,-->--[LAX+4...LAX]-->--.
-          `--<------[VAC0]-----<--'
+RORX      .-->--[LAX+4...LAX]-->--.
+          '--<------[VAC0]-----<--'
 ```
 
 The following instructions are mostly used to accelerate the floating point runtime.
@@ -414,10 +417,9 @@ See the source code comments for a more precise documentation.
 
 | Opcode | Encoding      | Cycles     | Function
 | ------ | ----------    | ---------- | -------
-| LDFARG | `35 29`       | typ 30+24  | Load floating point argument `[vAC]..[vAC]+4`
-| ADDX   | `35 02`       | typ 118    | Add 40 bits integer `[vAC]..[vAC]+4` to extended accumulator `vLAX`
-| NEGX   | `35 0e`       | typ 64     | Negate extended accumulator `vLAX`
-| MACX   | `35 1c`       | long       | Adds the product of `vACL` (8 bits) by `sysArgs[0..4]` (32 bits) to `vLAX` (40 bits)
+| LDFARG | `35 29`       | typ 72     | Load floating point argument `[vAC]..[vAC]+4`
+| NEGX   | `35 0e`       | 22+14+24   | Negate extended accumulator `vLAX`
+| MACX   | `35 1c`       | 452 to 916 | Adds the product of `vACL` (8 bits) by `sysArgs[0..4]` (32 bits) to `vLAX` (40 bits)
 
 **History:**
 These extended arithmetic and floating point support instructions
@@ -433,7 +435,7 @@ are used by DEV7ROM for other purposes.
 
 | Opcode | Encoding | Cycles | Function
 | ------ | -------- | -------| -------
-| RESET   | `35 5c` | n/a          | Soft reset
+| RESET  | `35 5c`  | n/a    | Soft reset
 
 
 **History:** This instruction was implemented to shorten the reset
