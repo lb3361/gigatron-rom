@@ -50,7 +50,8 @@ call operation.
 | `BEQ` `BNE` etc. | ! Now 26 cycles instead of 28
 | `ORW` `ANDW`     | ! Now 26 cycles instead of 28
 | `ADDI` `SUBI`    | ! Now 24 cycles (26 with carry) instead of 28
-| `LD`             | ! Now 20 cycles instead of 22 (v5a: 22, v4: 18)
+| `LD`             | ! Now 18 cycles instead of 22 (like romv4)
+| `ANDI` `INC`     | ! Now 18 cycles instead of 20
 | `SUBW`           | Now 30 cycles instead of 27
 | `CALL`           | Now 30 cycles instead of 26
 | `PUSH`           | Now 28 cycles instead of 26 (38 cycles when crossing a page)
@@ -130,7 +131,7 @@ opcodes instead of the traditional `Bcc` opcodes.
 | `JEQ`  | `3f LL HH` | 24 to 26 | Jump if `vAC==0`
 | `JNE`  | `72 LL HH` | 24 to 26 | Jump if `vAC!=0`
 | `JLT`  | `50 LL HH` | 22 to 26 | Jump if `vAC<0`
-| `JGT`  | `4d LL HH` | 24 to 26 | Jump if `vAC>0`
+| `JGT`  | `4d LL HH` | 22 to 26 | Jump if `vAC>0`
 | `JLE`  | `56 LL HH` | 24 to 26 | Jump if `vAC<=0`
 | `JGE`  | `53 LL HH` | 22 to 26 | Jump if `vAC>=0`
 
@@ -357,7 +358,7 @@ conditional jump opcodes.
 | STLAC  | `35 20`    | 38          | Store `vLAC` into `[vAC]..[vAC+3]` into long accumulator `vLAC`
 | MOVL   | `35 db YY XX` | 30+30    | Copy long from `[XX..XX+3]` to `[YY..YY+3]`<br>(trashes `sysArgs[0123567]`)
 | ADDL   | `35 00`    | 22+20+22+30 | Add long `[vAC]..[vAC+3]` to long accumulator `vLAC`<br>(trashes `sysArgs[567]`)
-| SUBL   | `35 04`    | 22+18+20+38 | Subtract long `[vAC]..[vAC+3]` from long accumulator `vLAC`<br>(trashes `sysArgs[567]`)
+| SUBL   | `35 04`    | 22+18+20+28 | Subtract long `[vAC]..[vAC+3]` from long accumulator `vLAC`<br>(trashes `sysArgs[567]`)
 | ANDL   | `35 06`    | 22+28       | Bitwise and of `[vAC]..[vAC+3]` with long accumulator `vLAC`<br>(trashes `sysArgs7`)
 | ORL    | `35 08`    | 22+28       | Bitwise or of `[vAC]..[vAC+3]` with long accumulator `vLAC`<br>(trashes `sysArgs7`)
 | XORL   | `35 0a`    | 22+28       | Bitwise xor of `[vAC]..[vAC+3]` with long accumulator `vLAC`<br>(trashes `sysArgs7`)
@@ -402,9 +403,9 @@ Three shift instructions operate on the 40 bits extended accumulator `vLAX`.
 
 | Opcode | Encoding      | Cycles     | Function
 | ------ | ----------    | ---------- | -------
-| LSRXA  | `35 18`       | 52 to 324  | Right shift `vLAX` by `vAC & 0x3f` positions
-| LSLXA  | `35 12`       | 36 to 392  | Left shift `vLAX` by `vAC & 0x3f` positions
-| RORX   | `35 1a`       | 212        | Right rotate `vLAX` from/into bit 0 of `vAC`
+| LSRXA  | `35 18`       | 54 to 382  | Right shift `vLAX` by `vAC & 0x3f` positions
+| LSLXA  | `35 12`       | 36 to 422  | Left shift `vLAX` by `vAC & 0x3f` positions
+| RORX   | `35 1a`       | 198        | Right rotate `vLAX` from/into bit 0 of `vAC`
 
 The following picture illustrates how `RORX` rotate bits:
 ```
@@ -419,7 +420,7 @@ See the source code comments for a more precise documentation.
 | ------ | ----------    | ---------- | -------
 | LDFARG | `35 29`       | typ 72     | Load floating point argument `[vAC]..[vAC]+4`
 | NEGX   | `35 0e`       | 22+14+24   | Negate extended accumulator `vLAX`
-| MACX   | `35 1c`       | 452 to 916 | Adds the product of `vACL` (8 bits) by `sysArgs[0..4]` (32 bits) to `vLAX` (40 bits)
+| MACX   | `35 1c`       | 394 to 858 | Adds the product of `vACL` (8 bits) by `sysArgs[0..4]` (32 bits) to `vLAX` (40 bits)
 
 **History:**
 These extended arithmetic and floating point support instructions
