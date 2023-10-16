@@ -45,19 +45,20 @@ changes are reported below. Conditional branches are two cycles
 faster, making up for slightly slower stack operations and indirect
 call operation.
 
-| Opcodes | Notes
+| Opcodes | Cycles
 | ------- | ------
-| `BEQ` `BNE` etc. | ! Now 26 cycles instead of 28
-| `ORW` `ANDW`     | ! Now 26 cycles instead of 28
-| `ADDI` `SUBI`    | ! Now 24 cycles (26 with carry) instead of 28
-| `LD`             | ! Now 18 cycles instead of 22 (like romv4)
-| `ANDI` `INC`     | ! Now 18 cycles instead of 20
-| `SUBW`           | Now 30 cycles instead of 27
-| `CALL`           | Now 30 cycles instead of 26
-| `PUSH`           | Now 28 cycles instead of 26 (38 cycles when crossing a page)
-| `POP`            | Now 30 cycles instead of 26 (40 cycles when crossing a page)
-| `ALLOC`          | Now 24 cycles instead of 14 (28-30 cycles when `vSPH`!=0)
-| `LDLW` `STLW`    | Now 28 cycles instead of 26 (38 when`vSPH`!=0)
+| `BEQ` `BNE` etc. | ! 26 instead of 28
+| `ORW` `ANDW`     | ! 26 instead of 28
+| `ADDI` `SUBI`    | ! 24 (26 with carry) instead of 28
+| `LD`             | ! 18 instead of 22 (like romv4)
+| `ANDI` `INC`     | ! 18 instead of 20
+| `SUBW`           | 30 instead of 27
+| `CALL`           | 30 instead of 26
+| `PUSH`           | 28 instead of 26 (38 when crossing a page)
+| `POP`            | 30 instead of 26 (38 when crossing a page)
+| `ALLOC`          | 24 instead of 14 when `vSPH`=0, 28 or 30 otherwise
+| `STLW`           | still 26 when `vSPH`=0, 36 otherwise
+| `LDLW`           | still 26 when `vSPH`=0, 36/38 otherwise
 
 
 ### True 16 bits stack
@@ -357,8 +358,8 @@ conditional jump opcodes.
 | LDLAC  | `35 1e`    | 38          | Load long `[vAC]..[vAC+3]` into long accumulator `vLAC`
 | STLAC  | `35 20`    | 38          | Store `vLAC` into `[vAC]..[vAC+3]` into long accumulator `vLAC`
 | MOVL   | `35 db YY XX` | 30+30    | Copy long from `[XX..XX+3]` to `[YY..YY+3]`<br>(trashes `sysArgs[0123567]`)
-| ADDL   | `35 00`    | 22+20+22+30 | Add long `[vAC]..[vAC+3]` to long accumulator `vLAC`<br>(trashes `sysArgs[567]`)
-| SUBL   | `35 04`    | 22+18+20+28 | Subtract long `[vAC]..[vAC+3]` from long accumulator `vLAC`<br>(trashes `sysArgs[567]`)
+| ADDL   | `35 00`    | 22+30+28    | Add long `[vAC]..[vAC+3]` to long accumulator `vLAC`<br>(trashes `sysArgs[567]`)
+| SUBL   | `35 04`    | 22+28+28    | Subtract long `[vAC]..[vAC+3]` from long accumulator `vLAC`<br>(trashes `sysArgs[567]`)
 | ANDL   | `35 06`    | 22+28       | Bitwise and of `[vAC]..[vAC+3]` with long accumulator `vLAC`<br>(trashes `sysArgs7`)
 | ORL    | `35 08`    | 22+28       | Bitwise or of `[vAC]..[vAC+3]` with long accumulator `vLAC`<br>(trashes `sysArgs7`)
 | XORL   | `35 0a`    | 22+28       | Bitwise xor of `[vAC]..[vAC+3]` with long accumulator `vLAC`<br>(trashes `sysArgs7`)
@@ -420,7 +421,7 @@ See the source code comments for a more precise documentation.
 | ------ | ----------    | ---------- | -------
 | LDFARG | `35 29`       | typ 72     | Load floating point argument `[vAC]..[vAC]+4`
 | NEGX   | `35 0e`       | 22+14+24   | Negate extended accumulator `vLAX`
-| MACX   | `35 1c`       | 394 to 858 | Adds the product of `vACL` (8 bits) by `sysArgs[0..4]` (32 bits) to `vLAX` (40 bits)
+| MACX   | `35 1c`       | 394 to 842 | Adds the product of `vACL` (8 bits) by `sysArgs[0..4]` (32 bits) to `vLAX` (40 bits)
 
 **History:**
 These extended arithmetic and floating point support instructions
