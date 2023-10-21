@@ -7567,24 +7567,19 @@ oplabel('LDFARG_v7')
 bra('fsm1aop0#16')              #14
 ld('ldfarg#3a')                 #15
 
-# fsm1b helper (2 args)
-label('fsm1bop2#16')
-st([fsmState])                  #16
-ld([Y,X])                       #17
-st([Y,Xpp])                     #18
-st([sysArgs+5])                 #19
-ld([Y,X])                       #20
-st([sysArgs+6])                 #21
-ld(2)                           #22
-adda([vPC])                     #23
-st([vPC])                       #24
-ld(hi('FSM1B_ENTER'))           #25
-st([vCpuSelect])                #26
-adda(1,Y)                       #27
-jmp(Y,'NEXT')                   #28
-ld(-30/2)                       #29
+# Free instruction slots (7 bytes)
+fillers(until=0x32)
 
-# Stretch
+# fsm helper (1 arg)
+label('fsmXXop1#21')
+st([vCpuSelect])                #21
+adda(1,Y)                       #22
+ld(1)                           #23
+adda([vPC])                     #24
+st([vPC])                       #25
+jmp(Y,'NEXT')                   #26
+ld(-28/2)                       #27
+
 fillers(until=0x39)
 
 # Instruction RDIVS (35 39 xx) [~1250 cycles total]
@@ -7787,29 +7782,39 @@ bpl('addiv#33')                 #31
 bmi('addiv#34c')                #32
 ld(0xff)                        #33
 
+# fsm1c helper (0 args)
+label('fsm1cop0#16')
+st([fsmState])                  #16
+ld(hi('FSM1C_ENTER'))           #17
+st([vCpuSelect])                #18
+adda(1,Y)                       #19
+jmp(Y,'NEXT')                   #20
+ld(-22/2)                       #21
+
 # fsm14 helper (1 arg)
 label('fsm14op1#16')
 st([fsmState])                  #16
 ld([Y,X])                       #17
 st([sysArgs+6])                 #18
-nop()                           #19
+bra('fsmXXop1#21')              #19
 ld(hi('FSM14_ENTER'))           #20
-label('fsm14op1#21')
-st([vCpuSelect])                #21
-adda(1,Y)                       #22
-ld(1)                           #23
-adda([vPC])                     #24
-st([vPC])                       #25
-jmp(Y,'NEXT')                   #26
-ld(-28/2)                       #27
 
 # fsm1b helper (1 arg)
 label('fsm1bop1#16')
 st([fsmState])                  #16
 ld([Y,X])                       #17
 st([sysArgs+6])                 #18
-bra('fsm14op1#21')              #19
+bra('fsmXXop1#21')              #19
 ld(hi('FSM1B_ENTER'))           #20
+
+# fsm1e helper (0 arg)
+label('fsm1eop0#16')
+st([fsmState])                  #16
+ld(hi('FSM1E_ENTER'))           #17
+st([vCpuSelect])                #18
+adda(1,Y)                       #19
+jmp(Y,'NEXT')                   #20
+ld(-22/2)                       #21
 
 fillers(until=0xcb)
 
@@ -7880,23 +7885,22 @@ adda(1,Y)                       #19
 jmp(Y,'NEXT')                   #20
 ld(-22/2)                       #21
 
-# fsm1c helper (0 args)
-label('fsm1cop0#16')
+# fsm1b helper (2 args)
+label('fsm1bop2#16')
 st([fsmState])                  #16
-ld(hi('FSM1C_ENTER'))           #17
-st([vCpuSelect])                #18
-adda(1,Y)                       #19
-jmp(Y,'NEXT')                   #20
-ld(-22/2)                       #21
-
-# fsm1e helper (0 arg)
-label('fsm1eop0#16')
-st([fsmState])                  #16
-ld(hi('FSM1E_ENTER'))           #17
-st([vCpuSelect])                #18
-adda(1,Y)                       #19
-jmp(Y,'NEXT')                   #20
-ld(-22/2)                       #21
+ld([Y,X])                       #17
+st([Y,Xpp])                     #18
+st([sysArgs+5])                 #19
+ld([Y,X])                       #20
+st([sysArgs+6])                 #21
+ld(2)                           #22
+adda([vPC])                     #23
+st([vPC])                       #24
+ld(hi('FSM1B_ENTER'))           #25
+st([vCpuSelect])                #26
+adda(1,Y)                       #27
+jmp(Y,'NEXT')                   #28
+ld(-30/2)                       #29
 
 # restart helper
 label('p35restart#18')
