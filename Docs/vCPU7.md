@@ -47,7 +47,10 @@ call operation.
 
 | Opcodes | Cycles
 | ------- | ------
-| `BEQ` `BNE` etc. | ! 26 instead of 28
+| `BEQ` `BNE`      | ! 24 instead of 28
+| `BLT` `BGE`      | ! 24 instead of 28
+| `BGT`            | ! 26 instead of 28
+| `BLE`            | ! 26/24-26 instead of 28
 | `ORW` `ANDW`     | ! 26 instead of 28
 | `ADDI` `SUBI`    | ! 24 (26 with carry) instead of 28
 | `LD`             | ! 18 instead of 22 (like romv4)
@@ -127,14 +130,14 @@ encoded as two bytes LL and HH. The target address is
 `Bcc` opcode and run faster, vCPU7 programs should use the `Jcc`
 opcodes instead of the traditional `Bcc` opcodes.
 
-| Opcode | Encoding | Cycles | Notes
-| ------ | -------- | -------| -------
-| `JEQ`  | `3f LL HH` | 24 to 26 | Jump if `vAC==0`
-| `JNE`  | `72 LL HH` | 24 to 26 | Jump if `vAC!=0`
-| `JLT`  | `50 LL HH` | 22 to 26 | Jump if `vAC<0`
-| `JGT`  | `4d LL HH` | 22 to 26 | Jump if `vAC>0`
-| `JLE`  | `56 LL HH` | 24 to 26 | Jump if `vAC<=0`
-| `JGE`  | `53 LL HH` | 22 to 26 | Jump if `vAC>=0`
+| Opcode | Encoding   |  Cycles   | Notes
+| ------ | ---------- | --------- | -------
+| `JEQ`  | `3f LL HH` |    24/26  | Jump if `vAC==0`
+| `JNE`  | `72 LL HH` |    24/26  | Jump if `vAC!=0`
+| `JLT`  | `50 LL HH` |    22/26  | Jump if `vAC<0`
+| `JGT`  | `4d LL HH` | 22-24/26  | Jump if `vAC>0`
+| `JLE`  | `56 LL HH` |    24/26  | Jump if `vAC<=0`
+| `JGE`  | `53 LL HH` |    22/26  | Jump if `vAC>=0`
 
 **History:**:
 Long conditional branches appeared in ROMvX0 around 2020.
