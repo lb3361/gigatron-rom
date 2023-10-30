@@ -2222,7 +2222,7 @@ label('DEEKA_v7')
 ld(hi('deeka#13'),Y)            #10,12
 jmp(Y,'deeka#13')               #11
 
-# Instruction JEQ (3f ll hh), 26 cycles (was EQ)
+# Instruction JEQ (3f ll hh), 24/26 cycles (was EQ)
 # * Branch if zero (if(vACL==0)vPC=hhll[+2])
 # * Original idea from at67
 label('EQ')
@@ -2263,7 +2263,7 @@ ld(hi('movqw#13'),Y)            #10
 jmp(Y,'movqw#13')               #11
 ld([vPC+1],Y)                   #12
 
-# Instruction JGT (4d ll hh), 26 cycles (was GT)
+# Instruction JGT (4d ll hh), 22-24/26 cycles (was GT)
 # * Branch if positive (if(vACL>0)vPC=hhll[+2])
 # * Original idea from at67
 label('GT')
@@ -2272,7 +2272,7 @@ ld(hi('jgt#13'),Y)              #10,12
 jmp(Y,'jgt#13')                 #11
 ld([vAC+1])                     #12
 
-# Instruction JLT (50 ll hh), 26 cycles (was LT)
+# Instruction JLT (50 ll hh), 22/26 cycles (was LT)
 # * Branch if negative (if(vACL<0)vPC=hhll[+2])
 # * Original idea from at67
 label('LT')
@@ -2281,7 +2281,7 @@ ld(hi('jlt#13'),Y)              #10
 jmp(Y,'jlt#13')                 #11
 ld([vAC+1])                     #12
 
-# Instruction JGE (53 ll hh), 26 cycles (was GE)
+# Instruction JGE (53 ll hh), 22/26 cycles (was GE)
 # * Branch if positive or zero (if(vACL>=0)vPC=hhll[+2])
 # * Original idea from at67
 label('GE')
@@ -2290,7 +2290,7 @@ ld(hi('jge#13'),Y)              #10
 jmp(Y,'jge#13')                 #11
 ld([vAC+1])                     #12
 
-# Instruction JLE (56 ll hh), 26 cycles (was LE)
+# Instruction JLE (56 ll hh), 24/26 cycles (was LE)
 # * Branch if negative or zero (if(vACL<=0)vPC=hhll[+2])
 # * Original idea from at67
 label('JLE_v7')
@@ -2357,7 +2357,7 @@ label('INCV_v7')
 ld(hi('incv#13'),Y)             #10,12
 jmp(Y,'incv#13')                #11
 
-# Instruction JNE (72 ii jj), 26 cycles (was NE)
+# Instruction JNE (72 ii jj), 24/26 cycles (was NE)
 # * Branch if not zero (if(vACL!=0)vPC=iijj)
 # * Original idea from at67
 label('NE')
@@ -2553,7 +2553,7 @@ ld(hi('def#13'),Y)              #10
 jmp(Y,'def#13')                 #11
 #st([vTmp])                     #12 Overlap
 #
-# Instruction CALL: Goto address and remember vPC (vLR,vPC=vPC+2,[D]+256*[D+1]-2), 26 cycles
+# Instruction CALL: Goto address and remember vPC (vLR,vPC=vPC+2,[D]+256*[D+1]-2), 30 cycles
 label('CALL')
 st([vTmp])                      #10,12
 ld(hi('call#14'),Y)             #11
@@ -2681,7 +2681,7 @@ ld(hi('xorw'),Y)                #10,12
 jmp(Y,'xorw')                   #11
 st([vTmp])                      #12
 
-# Instruction RET: Function return (vPC=vLR-2), 16 cycles
+# Instruction RET: Function return (vPC=vLR-2), 20 cycles
 label('RET')
 ld([vLR])                       #10
 assert pc()&255 == 0
@@ -7567,18 +7567,24 @@ oplabel('LDFARG_v7')
 bra('fsm1aop0#16')              #14
 ld('ldfarg#3a')                 #15
 
-# Free instruction slots (7 bytes)
-fillers(until=0x32)
+# Free instruction slots
+fillers(until=0x2f)
 
-# fsm helper (1 arg)
-label('fsmXXop1#21')
-st([vCpuSelect])                #21
-adda(1,Y)                       #22
-ld(1)                           #23
-adda([vPC])                     #24
-st([vPC])                       #25
-jmp(Y,'NEXT')                   #26
-ld(-28/2)                       #27
+# fsm14 helper (1 arg)
+label('fsm14op1#16')
+st([fsmState])                  #16
+ld([Y,X])                       #17
+st([sysArgs+6])                 #18
+bra('fsmXXop1#21')              #19
+ld(hi('FSM14_ENTER'))           #20
+
+# fsm1b helper (1 arg)
+label('fsm1bop1#16')
+st([fsmState])                  #16
+ld([Y,X])                       #17
+st([sysArgs+6])                 #18
+bra('fsmXXop1#21')              #19
+ld(hi('FSM1B_ENTER'))           #20
 
 fillers(until=0x39)
 
@@ -7605,64 +7611,67 @@ oplabel('MULW_v7')
 bra('fsm14op1#16')              #14
 ld('mulw#3a')                   #15
 
-# Instruction BEQ (35 3f xx) [26 cycles]
+# Instruction BEQ (35 3f xx) [24 cycles]
 # - Branch if zero (if(vACL==0)vPCL=xx)
 assert (pc() & 255) == (symbol('EQ') & 255)
 oplabel('BEQ')
-nop()                           #14
-nop()                           #15
-ld([vAC+1])                     #16
-label('beq#17')
-ora([vAC])                      #17
-beq('bccy#20')                  #18
-ld(1)                           #19
-label('bccn#20')
+ld([vAC+1])                     #14
+label('beq#15')
+ora([vAC])                      #15
+beq('bccy#18')                  #16
+label('bccn#17')
+ld(1)                           #17
+label('bccn#18*')
+adda([vPC])                     #18
+st([vPC])                       #19
+ld(hi('NEXTY'),Y)               #20
+jmp(Y,'NEXTY')                  #21
+ld(-24//2)                      #22
+
+#bcc helpers
+label('bcc#20')
 adda([vPC])                     #20
+label('bcc#21')
 st([vPC])                       #21
 ld(hi('NEXTY'),Y)               #22
 jmp(Y,'NEXTY')                  #23
 ld(-26//2)                      #24
-nop()
-label('bccn#18')
-bra('bccn#20')                  #18
-ld(1)                           #19
 
 # Instruction BGT (35 4d xx) [26 cycles]
 # - Branch if positive (if(vACL>0)vPCL=xx)
 assert (pc() & 255) == (symbol('GT') & 255)
 oplabel('BGT')
 ld([vAC+1])                     #14
-bpl('bne#17')                   #15
-bmi('bccn#18')                  #16
+bge('bgt#17')                   #15
+blt('bcc*#18')                  #16 AC!=0
 
-# Instruction BLT (35 50 xx) [26 cycles]
+# Instruction BLT (35 50 xx) [24 cycles]
 # - Branch if negative (if(vACL<0)vPCL=xx)
 assert (pc() & 255) == (symbol('LT') & 255)
 oplabel('BLT')
 ld([vAC+1])                     #14,17
-bmi('bccy#17')                  #15
-bpl('bccn#18')                  #16
+bge('bccn#17')                  #15
+blt('bccy#18')                  #16
 
-# Instruction BGE (35 53 xx) [26 cycles]
+# Instruction BGE (35 53 xx) [24 cycles]
 # * Branch if positive or zero (if(vACL>=0)vPCL=xx)
 assert (pc() & 255) == (symbol('GE') & 255)
 oplabel('BGE')
 ld([vAC+1])                     #14,17
-bpl('bccy#17')                  #15
-bmi('bccn#18')                  #16
+blt('bccn#17')                  #15
+bge('bccy#18')                  #16
 
-# Instruction BLE (35 56 xx) [26 cycles]
+# Instruction BLE (35 56 xx) [24/26 cycles]
 # * Branch if negative or zero (if(vACL<=0)vPCL=xx)
 assert (pc() & 255) == (symbol('LE') & 255)
 oplabel('BLE')
 ld([vAC+1])                     #14,17
-bpl('beq#17')                   #15
-nop()                           #16
-label('bccy#17')
-nop()                           #17
-label('bccy#18')
-bra('bccy#20')                  #18
-ld([Y,X])                       #19
+blt('bccy#17')                  #15
+ora([vAC])                      #16
+beq('bccy#19')                  #17
+label('bcc*#18')
+bne('bcc#20')                   #18
+ld(1)                           #19
 
 # Instruction RESET_v7.
 # * Causes a soft reset. Called by 'vReset' only.
@@ -7686,8 +7695,9 @@ ld([vAC+1],Y)                   #19
 st([Y,Xpp])                     #20
 ld([vTmp])                      #21 ih
 st([Y,X])                       #22
-ld([vPC])                       #23
-adda(2)                         #24
+ld(2)                           #23
+label('dokei#24')
+adda([vPC])                     #24
 st([vPC])                       #25
 ld(hi('NEXTY'),Y)               #26
 jmp(Y,'NEXTY')                  #27
@@ -7699,19 +7709,22 @@ fillers(until=0x72)
 # * Branch if not zero (if(vACL!=0)vPCL=xx)
 assert (pc() & 255) == (symbol('NE') & 255)
 oplabel('BNE')
-nop()                           #14
-nop()                           #15
-ld([vAC+1])                     #16
-label('bne#17')
-ora([vAC])                      #17
-beq('bccn#20')                  #18
-ld(1)                           #19
-label('bccy#20')
-ld([Y,X])                       #20
-st([vPC])                       #21
-ld(hi('NEXTY'),Y)               #22
-jmp(Y,'NEXTY')                  #23
-ld(-26//2)                      #24
+ld([vAC+1])                     #14
+ora([vAC])                      #15
+beq('bccn#18*')                 #16
+label('bccy#17')
+ld(1)                           #17
+label('bccy#18')
+ld([Y,X])                       #18
+st([vPC])                       #19
+ld(hi('NEXTY'),Y)               #20
+jmp(Y,'NEXTY')                  #21
+ld(-24//2)                      #22
+
+# Restart helper
+label('p35restart#18')
+bra('bcc#20')                   #18
+ld(-2)                          #19
 
 # Instruction ADDIV (35 7d ii vv), 38-40 cycles
 # * Add byte immediate ii to var [vv]+=ii
@@ -7782,39 +7795,35 @@ bpl('addiv#33')                 #31
 bmi('addiv#34c')                #32
 ld(0xff)                        #33
 
-# fsm1c helper (0 args)
-label('fsm1cop0#16')
-st([fsmState])                  #16
-ld(hi('FSM1C_ENTER'))           #17
-st([vCpuSelect])                #18
-adda(1,Y)                       #19
-jmp(Y,'NEXT')                   #20
-ld(-22/2)                       #21
+# bcc helpers
+label('bgt#17')
+ora([vAC])                      #17
+beq('bcc#20')                   #18
+label('bccy#19')
+ld(1)                           #19
+label('bccy#20')
+ld([Y,X])                       #20
+st([vPC])                       #21
+ld(hi('NEXTY'),Y)               #22
+jmp(Y,'NEXTY')                  #23
+ld(-26//2)                      #24
 
-# fsm14 helper (1 arg)
-label('fsm14op1#16')
+# fsm1b helper (2 args)
+label('fsm1bop2#16')
 st([fsmState])                  #16
 ld([Y,X])                       #17
-st([sysArgs+6])                 #18
-bra('fsmXXop1#21')              #19
-ld(hi('FSM14_ENTER'))           #20
-
-# fsm1b helper (1 arg)
-label('fsm1bop1#16')
-st([fsmState])                  #16
-ld([Y,X])                       #17
-st([sysArgs+6])                 #18
-bra('fsmXXop1#21')              #19
-ld(hi('FSM1B_ENTER'))           #20
-
-# fsm1e helper (0 arg)
-label('fsm1eop0#16')
-st([fsmState])                  #16
-ld(hi('FSM1E_ENTER'))           #17
-st([vCpuSelect])                #18
-adda(1,Y)                       #19
-jmp(Y,'NEXT')                   #20
-ld(-22/2)                       #21
+st([Y,Xpp])                     #18
+st([sysArgs+5])                 #19
+ld([Y,X])                       #20
+st([sysArgs+6])                 #21
+ld(2)                           #22
+adda([vPC])                     #23
+st([vPC])                       #24
+ld(hi('FSM1B_ENTER'))           #25
+st([vCpuSelect])                #26
+adda(1,Y)                       #27
+jmp(Y,'NEXT')                   #28
+ld(-30/2)                       #29
 
 fillers(until=0xcb)
 
@@ -7867,6 +7876,16 @@ oplabel('MOVF_v7')
 bra('fsm1bop2#16')              #14
 ld('movf#3a')                   #15
 
+# fsm helper (1 arg)
+label('fsmXXop1#21')
+st([vCpuSelect])                #21
+adda(1,Y)                       #22
+ld(1)                           #23
+adda([vPC])                     #24
+st([vPC])                       #25
+jmp(Y,'NEXT')                   #26
+ld(-28/2)                       #27
+
 # fsm1a helper (0 args)
 label('fsm1aop0#16')
 st([fsmState])                  #16
@@ -7885,32 +7904,23 @@ adda(1,Y)                       #19
 jmp(Y,'NEXT')                   #20
 ld(-22/2)                       #21
 
-# fsm1b helper (2 args)
-label('fsm1bop2#16')
+# fsm1c helper (0 args)
+label('fsm1cop0#16')
 st([fsmState])                  #16
-ld([Y,X])                       #17
-st([Y,Xpp])                     #18
-st([sysArgs+5])                 #19
-ld([Y,X])                       #20
-st([sysArgs+6])                 #21
-ld(2)                           #22
-adda([vPC])                     #23
-st([vPC])                       #24
-ld(hi('FSM1B_ENTER'))           #25
-st([vCpuSelect])                #26
-adda(1,Y)                       #27
-jmp(Y,'NEXT')                   #28
-ld(-30/2)                       #29
+ld(hi('FSM1C_ENTER'))           #17
+st([vCpuSelect])                #18
+adda(1,Y)                       #19
+jmp(Y,'NEXT')                   #20
+ld(-22/2)                       #21
 
-# restart helper
-label('p35restart#18')
-ld(-2)                          #18
-adda([vPC])                     #19
-st([vPC])                       #20
-ld(hi('REENTER'),Y)             #21
-jmp(Y,'REENTER')                #22
-ld(-26/2)                       #23
-
+# fsm1e helper (0 arg)
+label('fsm1eop0#16')
+st([fsmState])                  #16
+ld(hi('FSM1E_ENTER'))           #17
+st([vCpuSelect])                #18
+adda(1,Y)                       #19
+jmp(Y,'NEXT')                   #20
+ld(-22/2)                       #21
 
 
 #-----------------------------------------------------------------------
@@ -8537,7 +8547,7 @@ bpl('jccy#15')                  #13
 bmi('jccn#16')                  #14
 ld(1)                           #15
 
-# JGT implementation (24-26/26) [with vACH in AC]
+# JGT implementation (22-24/26) [with vACH in AC]
 label('jgt#13')
 bmi('jccn#15')                  #13
 ora([vAC])                      #14
@@ -8550,7 +8560,7 @@ ld(hi('NEXTY'),Y)               #20
 jmp(Y,'NEXTY')                  #21
 ld(-24/2)                       #22
 
-# JLE implementation (24-26/26) [with vACH in AC]
+# JLE implementation (24/26) [with vACH in AC]
 label('jle#13')
 bmi('jccy#15')                  #13
 ora([vAC])                      #14
