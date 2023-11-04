@@ -55,7 +55,8 @@ call operation.
 | `ADDI` `SUBI`    | ! 24 (26 with carry) instead of 28
 | `LD`             | ! 18 instead of 22 (like romv4)
 | `ANDI` `INC`     | ! 18 instead of 20
-| `SUBW`           | 30 instead of 27
+| `LSLW`           | ! 26-28 instead of 28
+| `SUBW`           | 30 instead of 28
 | `CALL`           | 30 instead of 26
 | `PUSH`           | 28 instead of 26 (38 when crossing a page)
 | `POP`            | 30 instead of 26 (38 when crossing a page)
