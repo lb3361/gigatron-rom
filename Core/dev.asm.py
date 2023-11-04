@@ -2151,8 +2151,8 @@ jmp(Y,'negv#13')                #11+overlap
 label('LD')
 ld(AC,X)                        #10
 ld([X])                         #11
+label('ld#12')
 st([vAC])                       #12
-label('ld#13')
 bra('ld#15')                    #13
 ld(0)                           #14
 
@@ -2179,15 +2179,17 @@ ld(-20/2)                       #19
 # Instruction STW: Store word in zero page ([D],[D+1]=vAC&255,vAC>>8), 20 cycles
 label('STW')
 ld(AC,X)                        #10,20
-adda(1)                         #11
-st([vTmp])                      #12 Address of high byte
-ld([vAC])                       #13
-st([X])                         #14
-ld([vTmp],X)                    #15
-ld([vAC+1])                     #16
-st([X])                         #17
-bra('NEXT')                     #18
-ld(-20/2)                       #19
+ld(0,Y)                         #11
+ld([vAC])                       #12
+st([Y,Xpp])                     #13
+ld([vAC+1])                     #14
+st([Y,X])                       #15
+bra('REENTER')                  #16
+ld(-20/2)                       #17
+
+# Free instruction slot
+nop()
+nop()
 
 # Instruction PREFIX35: (used to be BCC)
 label('BCC')
@@ -2397,9 +2399,9 @@ adda([vAC])                     #12
 
 # Instruction ANDI: Logical-AND with small constant (vAC&=D), 18 cycles
 label('ANDI')
-anda([vAC])                     #10
-bra('ld#13')                    #11
-st([vAC])                       #12
+bra('ld#12')                    #10
+anda([vAC])                     #11
+nop()                           #12
 
 # Instruction CALLI: Goto immediate address and remember vPC (vLR,vPC=vPC+3,$HHLL-2), 28 cycles
 label('CALLI_v5')
@@ -2592,7 +2594,7 @@ label('PEEKV_v7')
 ld(hi('peekv#13'),Y)            #10,12
 jmp(Y,'peekv#13')               #11
 
-# Instruction ALLOC: Create or destroy stack frame (vSP+=D), 24/28/30 cycles
+# Instruction ALLOC: Create or destroy stack frame (vSP+=D), 24/28-30 cycles
 label('ALLOC')
 ld(hi('alloc#13'),Y)            #10,12
 jmp(Y,'alloc#13')               #11
@@ -2612,24 +2614,24 @@ jmp(Y,'peeka#13')               #11
 # Gigatron applications (Snake, Racer, Mandelbrot, Loader). By providing them
 # in this way, at least they don't need to be implemented as a SYS extension.
 
-# Instruction ADDI: Add small positive constant (vAC+=D), 28 cycles
+# Instruction ADDI: Add small positive constant (vAC+=D), 24-26 cycles
 label('ADDI')
-ld(hi('addi'),Y)                #10,12
-jmp(Y,'addi')                   #11
+ld(hi('addi#13'),Y)             #10,12
+jmp(Y,'addi#13')                #11
 st([vTmp])                      #12
 
-# Instruction SUBI: Subtract small positive constant (vAC+=D), 28 cycles
+# Instruction SUBI: Subtract small positive constant (vAC+=D), 24-26 cycles
 label('SUBI')
-ld(hi('subi'),Y)                #10
-jmp(Y,'subi')                   #11
+ld(hi('subi#13'),Y)             #10
+jmp(Y,'subi#13')                #11
 st([vTmp])                      #12
 
-# Instruction LSLW: Logical shift left (vAC<<=1), 28 cycles
+# Instruction LSLW: Logical shift left (vAC<<=1), 26-28 cycles
 # Useful, because ADDW can't add vAC to itself. Also more compact.
 label('LSLW')
-ld(hi('lslw'),Y)                #10
-jmp(Y,'lslw')                   #11
-ld([vAC])                       #12
+ld(hi('lslw#13'),Y)             #10
+jmp(Y,'lslw#13')                #11
+ld([vPC])                       #12
 
 # Instruction STLW: (ec xx) 26 cycles (36 when vSPH!=0)
 # * Store word in stack frame: *(vSP + xx) := vAC
@@ -2730,7 +2732,7 @@ jmp(Y,'NEXTY')                  #21
 ld(-24/2)                       #22
 
 # ADDI implementation
-label('addi')
+label('addi#13')
 ld(hi('NEXTY'),Y)               #13
 adda([vAC])                     #14
 st([vAC])                       #15 Store low result
@@ -2753,19 +2755,26 @@ jmp(Y,'NEXTY')                  #24
 ld(-26/2)                       #25
 
 # LSLW implementation
-label('lslw')
-anda(128,X)                     #13
-adda([vAC])                     #14
-st([vAC])                       #15
-ld([X])                         #16
-adda([vAC+1])                   #17
-adda([vAC+1])                   #18
-st([vAC+1])                     #19
-ld([vPC])                       #20
-suba(1)                         #21
-ld(hi('REENTER_28'),Y)          #22
+label('lslw#13')
+suba(1)                         #13
+st([vPC])                       #14
+ld([vAC])                       #15
+ld(hi('NEXTY'),Y)               #16
+bmi('lslw#19')                  #17
+adda(AC)                        #18
+st([vAC])                       #19
+ld([vAC+1])                     #20
+adda(AC)                        #21
+st([vAC+1])                     #22
+jmp(Y,'NEXTY')                  #23
+ld(-26/2)                       #24
+label('lslw#19')
+st([vAC])                       #19
+ld([vAC+1])                     #20
+adda(AC)                        #21
+adda(1)                         #22
 jmp(Y,'REENTER_28')             #23
-st([vPC])                       #24
+st([vAC+1])                     #24
 
 # POKE implementation
 label('poke#14')
@@ -7369,7 +7378,7 @@ jmp(Y,'NEXTY')                  #25
 ld(-28/2)                       #26
 
 # SUBI implementation
-label('subi')
+label('subi#13')
 ld(hi('NEXTY'),Y)               #13
 ld([vAC])                       #14
 bmi('.subi#17')                 #15
