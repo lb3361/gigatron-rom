@@ -56,6 +56,7 @@ call operation.
 | `LD`             | ! 18 instead of 22 (like romv4)
 | `ANDI` `INC`     | ! 18 instead of 20
 | `LSLW`           | ! 26-28 instead of 28
+| `CMPHU` `CMPHS`  | ! 20-26 instead of 22-28
 | `SUBW`           | 30 instead of 28
 | `CALL`           | 30 instead of 26
 | `PUSH`           | 28 instead of 26 (38 when crossing a page)
