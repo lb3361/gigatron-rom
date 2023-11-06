@@ -2156,7 +2156,7 @@ st([vAC])                       #12
 bra('ld#15')                    #13
 ld(0)                           #14
 
-# Instruction CMPHS: Adjust high byte for signed compare (vACH=XXX), 28 cycles
+# Instruction CMPHS: Adjust high byte for signed compare (vACH=XXX), 20-26 cycles
 label('CMPHS_v5')
 ld(hi('cmphs#13'),Y)            #10
 jmp(Y,'cmphs#13')               #11
@@ -2178,7 +2178,7 @@ ld(-20/2)                       #19
 
 # Instruction STW: Store word in zero page ([D],[D+1]=vAC&255,vAC>>8), 20 cycles
 label('STW')
-ld(AC,X)                        #10,20
+ld(AC,X)                        #10
 ld(0,Y)                         #11
 ld([vAC])                       #12
 st([Y,Xpp])                     #13
@@ -2436,7 +2436,7 @@ ld([X])                         #11
 bra('inc#14')                   #12
 adda(1)                         #13
 
-# Instruction CMPHU: Adjust high byte for unsigned compare (vACH=XXX), 28 cycles
+# Instruction CMPHU: Adjust high byte for unsigned compare (vACH=XXX), 20-26 cycles
 label('CMPHU_v5')
 ld(hi('cmphu#13'),Y)            #10
 jmp(Y,'cmphu#13')               #11
@@ -4064,39 +4064,41 @@ st([vPC+1])                     #24
 #         1     1   |  vACH   vACH      no change needed
 #       ---------------------------
 
+
 # CMPHS implementation (vCPU instruction)
 label('cmphs#13')
-ld(hi('REENTER'),Y)             #13
-ld([X])                         #14
-xora([vAC+1])                   #15
-bpl('.cmphu#18')                #16 Skip if same sign
-ld([vAC+1])                     #17
+ld([vAC+1])                     #13
+xora([X])                       #14
+bpl('cmphu#17')                 #15
+ld(hi('NEXTY'),Y)               #16
+ld([X])                         #17
 bmi(pc()+3)                     #18
 bra(pc()+3)                     #19
-label('.cmphs#20')
-ld(+1)                          #20    vAC < variable
-ld(-1)                          #20(!) vAC > variable
-label('.cmphs#21')
-adda([X])                       #21
-st([vAC+1])                     #22
-jmp(Y,'REENTER_28')             #23
-#dummy()                        #24 Overlap
+suba(1)                         #20
+adda(1)                         #20
+st([vAC+1])                     #21
+jmp(Y,'REENTER')                #22
+ld(-26/2)                       #23
 
-# CMPHS implementation (vCPU instruction)
+# CMPHU implementation (vCPU instruction)
 label('cmphu#13')
-ld(hi('REENTER'),Y)             #13,24
-ld([X])                         #14
-xora([vAC+1])                   #15
-bpl('.cmphu#18')                #16 Skip if same sign
-ld([vAC+1])                     #17
-bmi('.cmphs#20')                #18
-bra('.cmphs#21')                #19
-ld(-1)                          #20    vAC > variable
+ld([vAC+1])                     #13
+xora([X])                       #14
+bpl('cmphu#17')                 #15
+ld(hi('NEXTY'),Y)               #16
+ld([X])                         #17
+bmi(pc()+3)                     #18
+bra(pc()+3)                     #19
+adda(1)                         #20
+suba(1)                         #20
+st([vAC+1])                     #21
+jmp(Y,'REENTER')                #22
+ld(-26/2)                       #23
 
 # No-operation for CMPHS/CMPHU when high bits are equal
-label('.cmphu#18')
-jmp(Y,'REENTER')                #18
-ld(-22/2)                       #19
+label('cmphu#17')
+jmp(Y,'NEXTY')                  #17
+ld(-20/2)                       #18
 
 # PEEKA implementation
 label('peeka#13')
