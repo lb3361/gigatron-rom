@@ -512,10 +512,11 @@ def runVcpu(n, ref=None, returnTo=None):
   assert n < 128
   assert n >= v6502_adjust
 
-  print('runVcpu at $%04x net cycles %3s info %s' % (pc(), n, ref))
+  print('runVcpu at $%04x net cycles %3s info %s' % (pc(), (n + maxTicks) * 2, ref))
 
   ld([vCpuSelect],Y)            #0 Allows us to use ctrl() just before runVcpu
-  if m == 1: nop()              #1 Tick alignment
+  if m == 1:                    # Tick alignment
+      st(0,[0])                 #1 Reinitialize zero for extra robustness
   if returnTo != 0x100:
     if returnTo is None:
       returnTo = pc() + 4       # Next instruction
@@ -1382,70 +1383,76 @@ st([videoY])                    #32
 
 # Determine if we're in the vertical sync pulse
 suba(1-2*(vBack+vPulse-1))      #33 Prepare sync values
-bne('.prepSync36')              #34 Tests for start of vPulse
+beq('.prepsync#36')             #34 > entering vertical pulse
 suba([videoPulse])              #35
-ld(syncBits^vSync)              #36 Entering vertical sync pulse
-bra('.prepSync39')              #37
-st([videoSync0])                #38
-label('.prepSync36')
-bne('.prepSync38')              #36 Tests for end of vPulse
+beq('.prepsync#38')             #36 > leaving vertical pulse
 ld(syncBits)                    #37
-bra('.prepSync40')              #38 Entering vertical back porch
-st([videoSync0])                #39
-label('.prepSync38')
-ld([videoSync0])                #38 Load current value
-label('.prepSync39')
-nop()                           #39
-label('.prepSync40')
-xora(hSync)                     #40 Precompute, as during the pulse there is no time
-st([videoSync1])                #41
+bra('.prepsync#40')             #38
+label('.prepsync#36')
+ld([videoSync1])                #39,36 Avoiding a nop
+ld(syncBits^vSync)              #37
+label('.prepsync#38')
+st([videoSync0])                #38
+xora(hSync)                     #39 Precompute, as during the pulse there is no time
+label('.prepsync#40')
+st([videoSync1])                #40
+st(0,[0])                       #41 Reinitialize carry lookup, for robustness
 
-# Capture the serial input before the '595 shifts it out
-ld([videoY])                    #42 Capture serial input
-xora(1-2*(vBack-1-1))           #43 Exactly when the 74HC595 has captured all 8 controller bits
-bne(pc()+3)                     #44
-bra(pc()+3)                     #45
-st(IN, [serialRaw])             #46
-st(0,[0])                       #46(!) Reinitialize carry lookup, for robustness
-
-# Update [xout] with the next sound sample every 4 scan lines.
-# Keep doing this on 'videoC equivalent' scan lines in vertical blank.
-ld([videoY])                    #47
-anda(6)                         #48
-beq('vBlankSample')             #49
+# 
+videoYInput = 1-2*(vBack-1-1)   # videoY when the 74HC595 has all 8 controller bits
+ld([videoY])                    #42
+xora(videoYInput)               #43 Check for serial input capture
+beq('vbInput#46')               #44
+xora(videoYInput)               #45
+anda(6)                         #46 Check for sound sample 
+beq('vbSample#49')              #47
 if not WITH_512K_BOARD:
-  ld([sample])                    #50
+    ld([sample])                #48
 else:
-  ld([sample],Y)                  #50
-
-label('vBlankNormal')
-runVcpu(199-51,                 #51 Application cycles (vBlank scan lines without sound sample update)
-        'AB-D line 1-36')
+    ld([sample],Y)              #48
+label('vbNormal#49')
+runVcpu(199-49,
+        'AB-D line 1-36')       #49 Application cycles (vBlank scan lines without sound sample update)
 bra('sound1')                   #199
 ld([videoSync0],OUT)            #0 <New scan line start>
 
-label('vBlankSample')
-if not WITH_512K_BOARD:
-  ora(0x0f)                       #51 New sound sample is ready
-  anda([xoutMask])                #52
-  st([xout])                      #53
-  st(sample, [sample])            #54 Reset for next sample
-  runVcpu(199-55,                 #55 Application cycles (vBlank scan lines with sound sample update)
-          '--C- line 3-39')
+# Capture serial input, exactly when the 74HC595 has captured all 8 controller bits
+label('vbInput#46')
+st(IN, [serialRaw])             #46
+if videoYInput & 6 != 0:
+    bra('vbNormal#49')          #47
 else:
-  ld([xoutMask])                  #51
-  bmi(pc()+3)                     #52
-  bra(pc()+3)                     #53
-  nop()                           #54
-  ctrl(Y,0xD0)                    #54 instead of #43 (wrong by ~2us)
-  ld([sample])                    #55
-  ora(0x0f)                       #56 New sound sample is ready
-  anda([xoutMask])                #57
-  st([xout])                      #58
-  st(sample, [sample])            #59 Reset for next sample
-  runVcpu(199-60,                 #60 Application cycles (vBlank scan lines with sound sample update)
-          '--C- line 3-39')
+    bra('vbSample#49')          #47
+if not WITH_512K_BOARD:
+    ld([sample])                #48
+else:
+    ld([sample],Y)              #48
 
+# Update [xout] with the next sound sample every 4 scan lines.
+# Keep doing this on 'videoC equivalent' scan lines in vertical blank.
+label('vbSample#49')
+if not WITH_512K_BOARD:
+    ora(0x0f)                   #49 New sound sample is ready
+    anda([xoutMask])            #50
+    st([xout])                  #51
+    st(sample, [sample])        #52 Reset for next sample
+    runVcpu(199-53,
+            '--C- line 3-39')   #53 Application cycles (vBlank scan lines with sound sample update)
+else:
+    ld([xoutMask])              #49
+    bmi('.vbSample#52')         #50
+    ld([sample])                #51
+    bra('.vbSample#54')         #52
+    ora(0x0f)                   #53
+    label('.vbSample#52')
+    ctrl(Y,0xD0)                #52 instead of #43 (wrong by ~2us)
+    ora(0x0f)                   #53
+    label('.vbSample#54')
+    anda([xoutMask])            #54
+    st([xout])                  #55
+    st(sample, [sample])        #56 Reset for next sample
+    runVcpu(199-57,
+            '--C- line 3-39')   #57 Application cycles (vBlank scan lines with sound sample update)
 bra('sound1')                   #199
 ld([videoSync0],OUT)            #0 <New scan line start>
 
@@ -1453,7 +1460,6 @@ ld([videoSync0],OUT)            #0 <New scan line start>
 
 label('.vBlankLast#32')
 jmp(Y,'vBlankLast#34')          #32 Jump out of page for space reasons
-#assert hi(controllerType) == hi(pc()) # Assume these share the high address
 ld(hi(pc()),Y)                  #33
 
 label('vBlankLast#52')
@@ -1696,7 +1702,7 @@ if WITH_512K_BOARD:
   ld(syncBits)                    #39
   ora([Y,Xpp], OUT)               #40 Always outputs pixels on C lines
   runVcpu(200-41,                 #41
-          '-B-- line 40-520 no sound',
+          '--C- line 40-520 no sound',
           returnTo=0x1ff )
   label('videoC#39')
   ld(syncBits)                    #39
@@ -1770,16 +1776,15 @@ if WITH_512K_BOARD:
   ld('videoA')                    #36,37 Transfer to visible screen area
   st([nextVideo])                 #37
   label('.videoF#38')
-  runVcpu(200-38,                 #38
-          'ABCD line 40-520 (videoF)',
-          returnTo=0x1ff )
+  runVcpu(200-38,
+          'F--- line 40-520',
+          returnTo=0x1ff )        #38 
 
   fillers(until=0xfc);
   label('pixels')
   ora([Y,Xpp],OUT)                #40
   label('nopixels')
   nop()                           #40
-
 
 elif WITH_128K_BOARD:
 
@@ -1924,10 +1929,10 @@ elif WITH_128K_BOARD:
   #
   # Alternative for pixel burst: faster application mode
   label('nopixels')
-  ld([ctrlCopy],X)            #38
+  ld([ctrlCopy],X)                #38
   ctrl(X)                         #39
   runVcpu(199-40,
-          'ABCD line 40-520',
+          'FBCD line 40-520',
           returnTo=0x1fe)         #40 Application interpreter (black scanlines)
 
 else:  # NORMAL VIDEO CODE
@@ -2072,7 +2077,8 @@ else:  # NORMAL VIDEO CODE
   #
   # Alternative for pixel burst: faster application mode
   label('nopixels')
-  runVcpu(200-38, 'ABCD line 40-520',
+  runVcpu(200-38,
+          'FBCD line 40-520',
           returnTo=0x1ff)         #38 Application interpreter (black scanlines)
 
 
