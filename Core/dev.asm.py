@@ -6031,41 +6031,36 @@ nop()                           #47
 #       More SYS functions
 #-----------------------------------------------------------------------
 
-
 # SYS_VDrawBits_134 implementation
 label('sys_VDrawBits')
 ld(0)                           #18
 label('.sysVdb0')
-st([vTmp])                      #19+i*25
-adda([sysArgs+5],Y)             #20+i*25 Y=[sysPos+1]+[vTmp]
-ld([sysArgs+2])                 #21+i*25 Select color
-bmi(pc()+3)                     #22+i*25
-bra(pc()+3)                     #23+i*25
-ld([sysArgs+0])                 #24+i*25
-ld([sysArgs+1])                 #24+i*25(!)
-st([Y,X])                       #25+i*25 Draw pixel
-ld([sysArgs+2])                 #26+i*25 Shift byte left
-adda(AC)                        #27+i*25
-st([sysArgs+2])                 #28+i*25
-ld([vTmp])                      #29+i*25 Unrolled loop (once)
-adda([sysArgs+5])               #31+i*25
-adda(1,Y)                       #30+i*25 Y=[sysPos+1]+[vTmp]+1
-ld([sysArgs+2])                 #32+i*25 Select color
-bmi(pc()+3)                     #33+i*25
-bra(pc()+3)                     #34+i*25
-ld([sysArgs+0])                 #35+i*25
-ld([sysArgs+1])                 #35+i*25(!)
-st([Y,X])                       #36+i*25 Draw pixel
-ld([sysArgs+2])                 #37+i*25 Shift byte left
-adda(AC)                        #38+i*25
-st([sysArgs+2])                 #39+i*25
-ld([vTmp])                      #40+i*25 Loop counter
-suba(6)                         #41+i*25
-bne('.sysVdb0')                 #42+i*25
-adda(8)                         #43+i*25 Steps of 2
-ld(hi('REENTER'),Y)             #119
-jmp(Y,'REENTER')                #120
-ld(-124/2)                      #121
+st([vTmp])                      #19+i*12
+adda([sysArgs+5],Y)             #20+i*12 Y=[sysPos+1]+[vTmp]
+ld([sysArgs+2])                 #21+i*12 Select color
+bmi('.sysVdb1')                 #22+i*12
+adda(AC)                        #23+i*12
+st([sysArgs+2])                 #24+i*12
+ld([sysArgs+0])                 #25+i*12
+st([Y,X])                       #26+i*12
+ld([vTmp])                      #27+i*12
+suba(7)                         #28+i*12
+bne('.sysVdb0')                 #29+i*12
+adda(8)                         #30+i*12
+ld(hi('REENTER'),Y)             #115
+jmp(Y,'REENTER')                #116
+ld(-120/2)                      #117
+label('.sysVdb1')
+st([sysArgs+2])                 #24+i*12
+ld([sysArgs+1])                 #25+i*12
+st([Y,X])                       #26+i*12
+ld([vTmp])                      #27+i*12
+suba(7)                         #28+i*12
+bne('.sysVdb0')                 #29+i*12
+adda(8)                         #30+i*12
+ld(hi('REENTER'),Y)             #115
+jmp(Y,'REENTER')                #116
+ld(-120/2)                      #117
 
 # SYS_ResetWaveforms_v4_50 implementation
 label('sys_ResetWaveforms')
