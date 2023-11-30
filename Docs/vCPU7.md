@@ -315,7 +315,7 @@ copy up to five bytes to or from `sysArgs0` (only!).
 | Opcode |  Encoding  | Cycles     | Function
 | ------ | ---------- | -----------| -------
 | COPY   | `35 cb`    |  (notes)   | Copy `vACL` bytes from `[vT3]..` to `[vT2]..`.
-| COPYN  | `7d cf NN` |  (notes)   | Copy NN bytes from `[vT3]..` to `[vT2]..`.
+| COPYN  | `35 cf NN` |  (notes)   | Copy NN bytes from `[vT3]..` to `[vT2]..`.
 
 Like most long vCPU7.md instructions, the memory copy instructions
 rely on the FSM mechanism (https://forum.gigatron.io/viewtopic.php?t=403)
