@@ -691,7 +691,7 @@ st([vPC])
 adda(2,X)
 ld(vReset>>8)
 st([vPC+1],Y)
-st(0x35,              [Y,Xpp])  # vReset
+st(lo('PREFIX35'),    [Y,Xpp])  # vReset
 st(lo('RESET_v7'),    [Y,Xpp])
 ld(vIRQ_v5 & 0xff, X)
 st(0,                 [Y,Xpp])  # vIRQ_v5: Disable interrupts
@@ -745,49 +745,50 @@ st([ledState_v2])               # Setting to 1..126 means "stopped"
 romTypeValue = symbol('romTypeValue_DEVROM')
 
 label('softReset#20')
-st([vSP])                       #20 vSP
-st([vSP+1])                     #21
-ld(hi('videoTop_v5'),Y)         #22
-st([Y,lo('videoTop_v5')])       #23 Show all 120 pixel lines
-st([Y,vIRQ_v5])                 #24 Disable vIRQ dispatch
-st([Y,vIRQ_v5+1])               #25
-st([soundTimer])                #26 soundTimer
-st([vLR])                       #27 vLR
-st([vLR+1])                     #28
+ld(0)                           #20
+st([vSP])                       #21 vSP
+st([vSP+1])                     #22
+ld(hi('videoTop_v5'),Y)         #23
+st([Y,lo('videoTop_v5')])       #24 Show all 120 pixel lines
+st([Y,vIRQ_v5])                 #25 Disable vIRQ dispatch
+st([Y,vIRQ_v5+1])               #26
+st([soundTimer])                #27 soundTimer
+st([vLR])                       #28 vLR
+st([vLR+1])                     #29
 # set videoMode
 if WITH_512K_BOARD:
-  st([videoModeC])              #29
-  ld('nopixels')                #30
-else:
-  ld('nopixels')                #29
   st([videoModeC])              #30
-st([videoModeB])                #31
-st([videoModeD])                #32
+  ld('nopixels')                #31
+else:
+  ld('nopixels')                #30
+  st([videoModeC])              #31
+st([videoModeB])                #32
+st([videoModeD])                #33
 # Set romTypeValue
 assert (romTypeValue & 7) == 0
-ld(romTypeValue)                #33 Set ROM type/version and clear channel mask
-st([romType])                   #34
+ld(romTypeValue)                #34 Set ROM type/version and clear channel mask
+st([romType])                   #35
 # Reset expansion board
-ctrl(0b01111111)                #35 Reset signal (default state | 0x3)
-ctrl(0b01111100)                #36 Default state.
-ld([vTmp])                      #37 Always load after ctrl
+ctrl(0b01111111)                #36 Reset signal (default state | 0x3)
+ctrl(0b01111100)                #37 Default state.
+# Adjust ticks
+ld([vTicks])                    #38 Always load after ctrl
+adda(-32/2)                     #39-32=7
+st([vTicks])                    #8
 if WITH_128K_BOARD:
-  ld(0x7c)                      #38
-  st([ctrlVideo])               #39
-  st([ctrlCopy])                #40
-  ld(-32/2)                     #41-32=9
+  ld(0x7c)                      #9
+  st([ctrlVideo])               #10
+  st([ctrlCopy])                #11
 else:
-  nop()                         #38 adjust vticks
-  ld(-30/2)                     #39-30=9
+  wait(12-9)                    #9
 # Exec Reset.gt1
-adda([vTicks])                  #10
-st([vTicks])                    #11
 ld('Reset')                     #12 Reset.gt1 from EPROM
 st([sysArgs+0])                 #13
 ld(hi('Reset'))                 #14
 ld(hi('sys_Exec'),Y)            #15
 jmp(Y,'sys_Exec')               #16
 st([sysArgs+1])                 #17
+
 
 
 #-----------------------------------------------------------------------
@@ -7580,23 +7581,6 @@ bra('fsm1aop0#16')              #14
 ld('ldfarg#3a')                 #15
 
 # Free instruction slots
-fillers(until=0x2f)
-
-# fsm14 helper (1 arg)
-label('fsm14op1#16')
-st([fsmState])                  #16
-ld([Y,X])                       #17
-st([sysArgs+6])                 #18
-bra('fsmXXop1#21')              #19
-ld(hi('FSM14_ENTER'))           #20
-
-# fsm1b helper (1 arg)
-label('fsm1bop1#16')
-st([fsmState])                  #16
-ld([Y,X])                       #17
-st([sysArgs+6])                 #18
-bra('fsmXXop1#21')              #19
-ld(hi('FSM1B_ENTER'))           #20
 
 fillers(until=0x39)
 
@@ -7640,22 +7624,22 @@ ld(hi('NEXTY'),Y)               #20
 jmp(Y,'NEXTY')                  #21
 ld(-24//2)                      #22
 
-#bcc helpers
-label('bcc#20')
-adda([vPC])                     #20
-label('bcc#21')
-st([vPC])                       #21
-ld(hi('NEXTY'),Y)               #22
-jmp(Y,'NEXTY')                  #23
-ld(-26//2)                      #24
+# Instruction RESET_v7.
+# * Causes a soft reset. Called by 'vReset' only.
+oplabel('RESET_v7')
+ld(min(0,maxTicks-88//2))       #14 serious margin
+adda([vTicks])                  #15
+blt('retry17#18')               #16
+ld(hi('softReset#20'),Y)        #17
+jmp(Y,'softReset#20')           #18
 
 # Instruction BGT (35 4d xx) [26 cycles]
 # - Branch if positive (if(vACL>0)vPCL=xx)
 assert (pc() & 255) == (symbol('GT') & 255)
 oplabel('BGT')
-ld([vAC+1])                     #14
+ld([vAC+1])                     #14,19
 bge('bgt#17')                   #15
-blt('bcc*#18')                  #16 AC!=0
+blt('bccn#18')                  #16 AC!=0
 
 # Instruction BLT (35 50 xx) [24 cycles]
 # - Branch if negative (if(vACL<0)vPCL=xx)
@@ -7673,27 +7657,25 @@ ld([vAC+1])                     #14,17
 blt('bccn#17')                  #15
 bge('bccy#18')                  #16
 
-# Instruction BLE (35 56 xx) [24/26 cycles]
+# Instruction BLE (35 56 xx) [26/24 cycles]
 # * Branch if negative or zero (if(vACL<=0)vPCL=xx)
 assert (pc() & 255) == (symbol('LE') & 255)
 oplabel('BLE')
 ld([vAC+1])                     #14,17
 blt('bccy#17')                  #15
 ora([vAC])                      #16
-beq('bccy#19')                  #17
-label('bcc*#18')
-bne('bcc#20')                   #18
+beq('bccy*#19')                 #17
+label('bccn#18')
+ld([Y,X])                       #18
 ld(1)                           #19
+label('bccn*#20')
+adda([vPC])                     #20
+st([vPC])                       #21
+ld(hi('NEXTY'),Y)               #22
+jmp(Y,'NEXTY')                  #23
+ld(-26//2)                      #24
 
-# Instruction RESET_v7.
-# * Causes a soft reset. Called by 'vReset' only.
-oplabel('RESET_v7')
-ld(min(0,maxTicks-88//2))       #14 serious margin
-adda([vTicks])                  #15
-blt('p35restart#18')            #16
-ld(hi('softReset#20'),Y)        #17
-jmp(Y,'softReset#20')           #18
-ld(0)                           #19
+fillers(until=0x62)
 
 # Instruction DOKEI (35 62 ih il), 30 cycles
 # * Store immediate word ihil at location [vAC]
@@ -7717,7 +7699,7 @@ ld(-30//2)                      #28
 
 fillers(until=0x72)
 
-# Instruction BNE (35 72 xx) [26 cycles]
+# Instruction BNE (35 72 xx) [24 cycles]
 # * Branch if not zero (if(vACL!=0)vPCL=xx)
 assert (pc() & 255) == (symbol('NE') & 255)
 oplabel('BNE')
@@ -7728,14 +7710,15 @@ label('bccy#17')
 ld(1)                           #17
 label('bccy#18')
 ld([Y,X])                       #18
+label('bccy*#19')
 st([vPC])                       #19
 ld(hi('NEXTY'),Y)               #20
 jmp(Y,'NEXTY')                  #21
 ld(-24//2)                      #22
 
-# Restart helper
-label('p35restart#18')
-bra('bcc#20')                   #18
+# restart helper
+label('retry17#18')
+bra('bccn*#20')                 #18
 ld(-2)                          #19
 
 # Instruction ADDIV (35 7d ii vv), 38-40 cycles
@@ -7743,7 +7726,7 @@ ld(-2)                          #19
 oplabel('ADDIV_v7')
 ld(min(0,maxTicks-40//2))       #14
 adda([vTicks])                  #15
-blt('p35restart#18')            #16
+blt('retry17#18')               #16
 ld([vPC])                       #17
 adda(2)                         #18
 st([vPC])                       #19
@@ -7782,7 +7765,7 @@ ld(-38//2)                      #36
 oplabel('SUBIV_v7')
 ld(min(0,maxTicks-40//2))       #14
 adda([vTicks])                  #15
-blt('p35restart#18')            #16
+blt('retry17#18')               #16
 ld([vPC])                       #17
 adda(2)                         #18
 st([vPC])                       #19
@@ -7807,20 +7790,18 @@ bpl('addiv#33')                 #31
 bmi('addiv#34c')                #32
 ld(0xff)                        #33
 
-# bcc helpers
+# bgt continuation
 label('bgt#17')
 ora([vAC])                      #17
-beq('bcc#20')                   #18
-label('bccy#19')
+beq('bccn*#20')                 #18
 ld(1)                           #19
-label('bccy#20')
 ld([Y,X])                       #20
 st([vPC])                       #21
 ld(hi('NEXTY'),Y)               #22
 jmp(Y,'NEXTY')                  #23
 ld(-26//2)                      #24
 
-# fsm1b helper (2 args)
+# fsm1b relay (2 args)
 label('fsm1bop2#16')
 st([fsmState])                  #16
 ld([Y,X])                       #17
@@ -7859,18 +7840,21 @@ st([fsmState])                  #17
 # * Origin: this is an improved version of the copy
 #   opcode I wrote for ROMvX0.
 oplabel('COPYN_v7')
-ld([Y,X])                       #14
-st([sysArgs+6])                 #15
-ld([vPC])                       #16
-adda(1)                         #17
-st([vPC])                       #18
-ld('copy#3a')                   #19
-st([fsmState])                  #20
-ld(hi('FSM18_ENTER'))           #21
-st([vCpuSelect])                #22
-adda(1,Y)                       #23
-jmp(Y,'NEXT')                   #24
-ld(-26/2)                       #25
+ld('copy#3a')                   #14
+bra('fsm18op1#17')              #15
+st([fsmState])                  #16
+
+# fsm relay (1 arg)
+label('fsmxxop1#19')
+st([vCpuSelect])                #19
+ld([Y,X])                       #20
+st([sysArgs+6])                 #21
+ld(1)                           #22
+adda([vCpuSelect],Y)            #23
+adda([vPC])                     #24
+st([vPC])                       #25
+jmp(Y,'NEXT')                   #26
+ld(-28/2)                       #27
 
 # Instruction MOVL (35 db yy xx), 30+30 cycles
 # * Move four bytes long from [xx] to [yy]
@@ -7888,17 +7872,7 @@ oplabel('MOVF_v7')
 bra('fsm1bop2#16')              #14
 ld('movf#3a')                   #15
 
-# fsm helper (1 arg)
-label('fsmXXop1#21')
-st([vCpuSelect])                #21
-adda(1,Y)                       #22
-ld(1)                           #23
-adda([vPC])                     #24
-st([vPC])                       #25
-jmp(Y,'NEXT')                   #26
-ld(-28/2)                       #27
-
-# fsm1a helper (0 args)
+# fsm1a relay (0 args)
 label('fsm1aop0#16')
 st([fsmState])                  #16
 ld(hi('FSM1A_ENTER'))           #17
@@ -7907,7 +7881,7 @@ adda(1,Y)                       #19
 jmp(Y,'NEXT')                   #20
 ld(-22/2)                       #21
 
-# fsm1b helper (0 args)
+# fsm1b relay (0 args)
 label('fsm1bop0#16')
 st([fsmState])                  #16
 ld(hi('FSM1B_ENTER'))           #17
@@ -7916,7 +7890,7 @@ adda(1,Y)                       #19
 jmp(Y,'NEXT')                   #20
 ld(-22/2)                       #21
 
-# fsm1c helper (0 args)
+# fsm1c relay (0 args)
 label('fsm1cop0#16')
 st([fsmState])                  #16
 ld(hi('FSM1C_ENTER'))           #17
@@ -7925,7 +7899,7 @@ adda(1,Y)                       #19
 jmp(Y,'NEXT')                   #20
 ld(-22/2)                       #21
 
-# fsm1e helper (0 arg)
+# fsm1e relay (0 arg)
 label('fsm1eop0#16')
 st([fsmState])                  #16
 ld(hi('FSM1E_ENTER'))           #17
@@ -7933,6 +7907,23 @@ st([vCpuSelect])                #18
 adda(1,Y)                       #19
 jmp(Y,'NEXT')                   #20
 ld(-22/2)                       #21
+
+# fsm14 relay (1 arg) for mulw, rdivu, rdivs
+label('fsm14op1#16')
+st([fsmState])                  #16
+bra('fsmxxop1#19')              #17
+ld(hi('FSM14_ENTER'))           #18
+
+# fsm1b relay (1 arg) for incvl negvl lslvl
+label('fsm1bop1#16')
+st([fsmState])                  #16
+bra('fsmxxop1#19')              #17
+ld(hi('FSM1B_ENTER'))           #18
+
+# fsm18 relay (1 arg) for copyn
+label('fsm18op1#17')
+bra('fsmxxop1#19')              #17
+ld(hi('FSM18_ENTER'))           #18
 
 
 #-----------------------------------------------------------------------
@@ -10210,11 +10201,11 @@ jmp(Y,'REENTER')                #24
 ld(-28/2)                       #25
 
 # Restarts
-label('restart1f#20')
+label('retry1f#20')
 nop()                           #20
-label('restart1f#21')
+label('retry1f#21')
 nop()                           #21
-label('restart1f#22')
+label('retry1f#22')
 ld([vPC])                       #22
 suba(2)                         #23
 st([vPC])                       #24
@@ -10241,7 +10232,7 @@ ld(-28//2)                      #26
 label('push#16')
 ld([vTicks])                    #16 carry
 adda(min(0,maxTicks-38/2))      #17
-blt('restart1f#20')             #18
+blt('retry1f#20')               #18
 ld(0xfe)                        #19
 st([vSP],X)                     #20
 ld([vSP+1])                     #21
@@ -10283,7 +10274,7 @@ ld(-30//2)                      #28
 label('pop#17')
 ld([vTicks])                    #17 carry
 adda(min(0,maxTicks-38/2))      #18
-blt('restart1f#21')             #19
+blt('retry1f#21')               #19
 ld([Y,X])                       #20
 st([Y,Xpp])                     #21
 st([vLR])                       #22
@@ -10320,7 +10311,7 @@ ld(-26/2)                       #24
 label('stlw#18')
 ld([vTicks])                    #18 vSPL/vSPH version
 adda(min(0,maxTicks-36/2))      #19
-blt('restart1f#22')             #20
+blt('retry1f#22')               #20
 ld([vTmp])                      #21
 bmi('stlw#24')                  #22
 suba([vSP])                     #23
@@ -10363,7 +10354,7 @@ ld(-26/2)                       #24
 label('ldlw#17')
 ld([vTicks])                    #17 vSPL/vSPH version
 adda(min(0,maxTicks-38/2))      #18
-blt('restart1f#21')             #19
+blt('retry1f#21')               #19
 ld([vTmp])                      #20
 adda([vSP])                     #21
 bmi('ldlw#24')                  #22
@@ -10399,7 +10390,7 @@ ld(-38/2)                       #35
 label('stlac#17')
 ld([vTicks])                    #17 carry
 adda(min(0,maxTicks-34/2))      #18
-blt('restart1f#21')             #19
+blt('retry1f#21')               #19
 ld([vAC+1],Y)                   #20
 ld([vAC],X)                     #21
 ld([vLAC])                      #22
@@ -10418,7 +10409,7 @@ ld(-34/2)                       #32
 label('ldlac#17')
 ld([vTicks])                    #17 carry
 adda(min(0,maxTicks-38/2))      #18
-blt('restart1f#21')             #19
+blt('retry1f#21')               #19
 ld([vAC+1],Y)                   #20
 ld([vAC],X)                     #21
 ld([Y,X])                       #22

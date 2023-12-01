@@ -50,7 +50,7 @@ call operation.
 | `BEQ` `BNE`      | ! 24 instead of 28
 | `BLT` `BGE`      | ! 24 instead of 28
 | `BGT`            | ! 26 instead of 28
-| `BLE`            | ! 26/24-26 instead of 28
+| `BLE`            | ! 26 (24 when taken) instead of 28
 | `ORW` `ANDW`     | ! 26 instead of 28
 | `ADDI` `SUBI`    | ! 24 (26 with carry) instead of 28
 | `LD`             | ! 18 instead of 22 (like romv4)
@@ -127,10 +127,12 @@ tolerate a bit more overhead than the normal single-byte opcodes.
 
 Meanwhile vCPU7 also recognizes the condition bytes as single-byte
 opcodes to implement conditional branches to a 16 bit target address
-encoded as two bytes LL and HH. The target address is
-`(HH*256)+((LL+2)&256)`.  Since opcodes use the same space as the
-`Bcc` opcode and run faster, vCPU7 programs should use the `Jcc`
-opcodes instead of the traditional `Bcc` opcodes.
+encoded as two bytes LL and HH. The target address is `(HH*256)+((LL+2)&256)`.
+The Jcc opcodes use the same space as the traditional `Bcc` opcodes.
+They require 26 cycles when the branch is taken, making `BEQ` and `BNE`
+more attractive for short branches. However the remaining long
+branches can be faster then their `Bcc` counterpart when the branch
+is not taken.
 
 | Opcode | Encoding   |  Cycles   | Notes
 | ------ | ---------- | --------- | -------
@@ -436,13 +438,13 @@ They have been selected after profiling the GLCC floating point runtime.
 
 ### Reset instruction
 
-Instruction `RESET` is only used by the reset stub at address
-`0x1f0`. This two bytes instructions frees bytes `0x1f2-0x1f5` which
-are used by DEV7ROM for other purposes.
+Instruction `RESET` is only used by the reset stub at address `0x1f0`.
+This is a two bytes instruction whose exact encoding is subject to change.
+Its sole purpuse is to make locations `0x1f2-0x1f5` available for other purposes.
 
 | Opcode | Encoding | Cycles | Function
 | ------ | -------- | -------| -------
-| RESET  | `35 5c`  | n/a    | Soft reset
+| RESET  | private  | n/a    | Soft reset
 
 
 **History:** This instruction was implemented to shorten the reset
