@@ -177,18 +177,18 @@ subset is motivated by the needs of the C compiler
 with naming conventions that are close to the ones
 selected for ROMvX0.
 
-Two additional instructions provide indexed access
+Two additional instructions provide indexed access.
 
 | Opcode |    Encoding    | Cycles | Function
 | ------ | -------------- | -------| -------
-| LDXW   | `6a VV LL HH`  | 30+30  | Load word at address `[VV]+$HHLL` into `vAC`
-| STXW   | `6c VV LL HH`  | 30+30  | Store `vAC` into word at address `[VV]+$HHLL`
+| LDXW   | `6a VV LL HH`  | 28+30  | Load word at address `[VV]+$HHLL` into `vAC`<br>(trashes `sysArgs[567]`)
+| STXW   | `6c VV LL HH`  | 28+30  | Store `vAC` into word at address `[VV]+$HHLL`<br>(trashes `sysArgs[567]`)
 
 **History:** :
 This draws on an earlier experience with indexed memory accesses
 (https://forum.gigatron.io/viewtopic.php?p=2349#p2349). These opcodes
 occasionally faster than direct address calculation followed by a peek
-or poke opcode.  Better timings would help.
+or poke opcode.  
 
 
 ### Moving data without changing vAC
