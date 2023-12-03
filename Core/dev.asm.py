@@ -2342,13 +2342,13 @@ label('SUBV_v7')
 ld(hi('subv#13'),Y)             #10,12
 jmp(Y,'subv#13')                #11
 
-# Instruction LDXW (6a vv ll hh), 30+30 cycles
+# Instruction LDXW (6a vv ll hh), 28+30 cycles
 # * Load word indexed: vAC := *([vv]+hhll)
 label('LDXW_v7')
 ld(hi('ldxw#13'),Y)             #10,12
 jmp(Y,'ldxw#13')                #11
 
-# Instruction STXW (6c vv ll hh), 30+28 cycles
+# Instruction STXW (6c vv ll hh), 28+30 cycles
 # * Store word indexed: *([vv]+hhll) := vAC
 label('STXW_v7')
 ld(hi('stxw#13'),Y)             #10,12
@@ -7405,6 +7405,32 @@ st([vAC+1])                     #22
 jmp(Y,'NEXTY')                  #23
 ld(-26/2)                       #24
 
+# LDXW implementation
+label('ldxw#13')
+st([vTmp])                      #13
+adda(1,X)                       #14
+bra('ldxw#17')                  #15
+ld('ldxw#3a')                   #16
+label('ldxw#17')
+st([fsmState])                  #17
+ld([X])                         #18
+st([sysArgs+6])                 #19
+ld([vTmp],X)                    #20
+ld([X])                         #21
+st([sysArgs+5])                 #22
+ld(hi('FSM1B_ENTER'))           #23
+st([vCpuSelect])                #24
+adda(1,Y)                       #25
+jmp(Y,'NEXT')                   #26
+ld(-28/2)                       #27
+
+# STXW implementation
+label('stxw#13')
+st([vTmp])                      #13
+adda(1,X)                       #14
+bra('ldxw#17')                  #15
+ld('stxw#3a')                   #16
+
 
 
 #-----------------------------------------------------------------------
@@ -7801,8 +7827,8 @@ ld(hi('NEXTY'),Y)               #22
 jmp(Y,'NEXTY')                  #23
 ld(-26//2)                      #24
 
-# fsm1b relay (2 args)
-label('fsm1bop2#16')
+# fsm18 relay (2 args)
+label('fsm18op2#16')
 st([fsmState])                  #16
 ld([Y,X])                       #17
 st([Y,Xpp])                     #18
@@ -7812,7 +7838,7 @@ st([sysArgs+6])                 #21
 ld(2)                           #22
 adda([vPC])                     #23
 st([vPC])                       #24
-ld(hi('FSM1B_ENTER'))           #25
+ld(hi('FSM18_ENTER'))           #25
 st([vCpuSelect])                #26
 adda(1,Y)                       #27
 jmp(Y,'NEXT')                   #28
@@ -7861,7 +7887,7 @@ ld(-28/2)                       #27
 # * No page crossings, trashes sysArgs,T0,T1
 # * Origin: https://forum.gigatron.io/viewtopic.php?p=2322#p2322
 oplabel('MOVL_v7')
-bra('fsm1bop2#16')              #14
+bra('fsm18op2#16')              #14
 ld('movl#3a')                   #15
 
 # Instruction MOVF (35 dd yy xx), 30+38 cycles
@@ -7869,7 +7895,7 @@ ld('movl#3a')                   #15
 # * No page crossings, trashes sysArgs,T0,T1, but MOVF(xx,sysArgs0) works
 # * Origin: https://forum.gigatron.io/viewtopic.php?p=2322#p2322
 oplabel('MOVF_v7')
-bra('fsm1bop2#16')              #14
+bra('fsm18op2#16')              #14
 ld('movf#3a')                   #15
 
 # fsm1a relay (0 args)
@@ -8130,105 +8156,78 @@ st([fsmState])                  #17
 bra('NEXT')                     #18
 ld(-20/2)                       #19
 
-#----------------------------------------
-# STXW LDXW
+# ----------------------------------------
+# MOVL MOVF
 
-# STXW implementation
-label('stxw#13')
-adda(1)                         #13
-st([sysArgs+6])                 #14
-ld([vPC])                       #15
-adda(2)                         #16
-st([vPC],X)                     #17
-ld([vPC+1],Y)                   #18
-ld([Y,X])                       #19
-st([Y,Xpp])                     #20
-st([sysArgs+4])                 #21 immlo
-ld([Y,X])                       #22
-st([sysArgs+5])                 #23 immhi
-ld('stxw#3a')                   #24
-st([fsmState])                  #25
-ld(hi('FSM18_ENTER'))           #26
-st([vCpuSelect])                #27
-bra('NEXT')                     #28
-ld(-30/2)                       #29
-
-label('stxw#3a')
-ld([sysArgs+6])                 #3
-suba(1,X)                       #4
-ld([sysArgs+4])                 #5 immlo
-adda([X])                       #6 +vlo
-st([sysArgs+4])                 #7
-bmi(pc()+4)                     #8
-suba([X])                       #9
-bra(pc()+4)                     #10
-ora([X])                        #11
-nop()                           #10
-anda([X])                       #11
-anda(0x80,X)                    #12
-ld([X])                         #13 carry
+# MOVL implementation
+label('movl#3a')
+ld(0,Y)                         #3
+ld([sysArgs+6])                 #4
+adda(1,X)                       #5
+ld([Y,X])                       #6
+st([Y,Xpp])                     #7
+st([sysArgs+1])                 #8
+ld([Y,X])                       #9
+st([Y,Xpp])                     #10
+st([sysArgs+2])                 #11
+ld([Y,X])                       #12
+st([sysArgs+3])                 #13
 ld([sysArgs+6],X)               #14
-adda([X])                       #15 +vhi
-adda([sysArgs+5],Y)             #16 +immhi
-ld([sysArgs+4],X)               #17
-ld([vAC])                       #18
+ld([Y,X])                       #15
+ld([sysArgs+5],X)               #16
+st([Y,Xpp])                     #17
+ld([sysArgs+1])                 #18
 st([Y,Xpp])                     #19
-ld([vAC+1])                     #20
-st([Y,X])                       #21
-ld(hi('ENTER'))                 #22
-st([vCpuSelect])                #23
-adda(1,Y)                       #24
-jmp(Y,'NEXTY')                  #25
-ld(-28/2)                       #26
+ld([sysArgs+2])                 #20
+st([Y,Xpp])                     #21
+ld([sysArgs+3])                 #22
+st([Y,Xpp])                     #23
+ld(hi('ENTER'))                 #24
+st([vCpuSelect])                #25
+ld(hi('NEXTY'),Y)               #26
+jmp(Y,'NEXTY')                  #27
+ld(-30/2)                       #28
 
-# LDXW implementation
-label('ldxw#13')
-adda(1)                         #13
-st([sysArgs+6])                 #14
-ld([vPC])                       #15
-adda(2)                         #16
-st([vPC],X)                     #17
-ld([vPC+1],Y)                   #18
+# MOVF implementation
+label('movf#3a')
+adda(min(0,maxTicks-38/2))      #3
+blt('movf#6a')                  #4
+ld(0,Y)                         #5
+ld([sysArgs+6],X)               #6
+ld([Y,X])                       #7
+st([Y,Xpp])                     #8
+st([sysArgs+0])                 #9
+ld([Y,X])                       #10
+st([Y,Xpp])                     #11
+st([sysArgs+1])                 #12
+ld([Y,X])                       #13
+st([Y,Xpp])                     #14
+st([sysArgs+2])                 #15
+ld([Y,X])                       #16
+st([Y,Xpp])                     #17
+st([sysArgs+3])                 #18
 ld([Y,X])                       #19
-st([Y,Xpp])                     #20
-st([sysArgs+4])                 #21 immlo
-ld([Y,X])                       #22
-st([sysArgs+5])                 #23 immhi
-ld('ldxw#3a')                   #24
-st([fsmState])                  #25
-ld(hi('FSM18_ENTER'))           #26
-st([vCpuSelect])                #27
-bra('NEXT')                     #28
-ld(-30/2)                       #29
+st([sysArgs+4])                 #20
+ld([sysArgs+5],X)               #21
+ld([sysArgs+0])                 #22
+st([Y,Xpp])                     #23
+ld([sysArgs+1])                 #24
+st([Y,Xpp])                     #25
+ld([sysArgs+2])                 #26
+st([Y,Xpp])                     #27
+ld([sysArgs+3])                 #28
+st([Y,Xpp])                     #29
+ld([sysArgs+4])                 #30
+st([Y,Xpp])                     #31
+ld(hi('ENTER'))                 #32
+st([vCpuSelect])                #33
+ld(hi('NEXTY'),Y)               #34
+jmp(Y,'NEXTY')                  #35
+ld(-38/2)                       #36
+label('movf#6a')
+bra('NEXT')                     #6
+ld(-8/2)                        #7
 
-label('ldxw#3a')
-ld([sysArgs+6])                 #3
-suba(1,X)                       #4
-ld([sysArgs+4])                 #5 immlo
-adda([X])                       #6 +vlo
-st([sysArgs+4])                 #7
-bmi(pc()+4)                     #8
-suba([X])                       #9
-bra(pc()+4)                     #10
-ora([X])                        #11
-nop()                           #10
-anda([X])                       #11
-anda(0x80,X)                    #12
-ld([X])                         #13 carry
-ld([sysArgs+6],X)               #14
-adda([X])                       #15 +vhi
-adda([sysArgs+5],Y)             #16 +immhi
-ld([sysArgs+4],X)               #17
-ld([Y,X])                       #18
-st([Y,Xpp])                     #19
-st([vAC])                       #20
-ld([Y,X])                       #21
-st([vAC+1])                     #22
-ld(hi('ENTER'))                 #23
-st([vCpuSelect])                #24
-adda(1,Y)                       #25
-jmp(Y,'REENTER')                #26
-ld(-30/2)                       #27
 
 
 
@@ -9162,78 +9161,80 @@ jmp(Y,'NEXTY')                  #13
 ld(-16/2)                       #14
 
 
-# ----------------------------------------
-# MOVL MOVF
+#----------------------------------------
+# STXW LDXW
 
-# MOVL implementation
-label('movl#3a')
-ld(0,Y)                         #3
-ld([sysArgs+6])                 #4
-adda(1,X)                       #5
-ld([Y,X])                       #6
-st([Y,Xpp])                     #7
-st([sysArgs+1])                 #8
-ld([Y,X])                       #9
-st([Y,Xpp])                     #10
-st([sysArgs+2])                 #11
-ld([Y,X])                       #12
-st([sysArgs+3])                 #13
-ld([sysArgs+6],X)               #14
+label('ldxw#3a')
+ld([vPC+1],Y)                   #3
+ld([vPC])                       #4
+adda(2)                         #5
+st([vPC],X)                     #6
+ld([Y,X])                       #7
+st([Y,Xpp])                     #8
+adda([sysArgs+5])               #9
+st([vTmp])                      #10
+bmi('ldxw#13a')                 #11
+suba([sysArgs+5])               #12
+ora([sysArgs+5])                #13
+bmi('ldxw#16a')                 #14
 ld([Y,X])                       #15
-ld([sysArgs+5],X)               #16
-st([Y,Xpp])                     #17
-ld([sysArgs+1])                 #18
-st([Y,Xpp])                     #19
-ld([sysArgs+2])                 #20
-st([Y,Xpp])                     #21
-ld([sysArgs+3])                 #22
-st([Y,Xpp])                     #23
+bra('ldxw#18a')                 #16
+adda([sysArgs+6],Y)             #17
+label('ldxw#13a')
+anda([sysArgs+5])               #13
+bmi('ldxw#16a')                 #14
+ld([Y,X])                       #15
+bra('ldxw#18a')                 #16
+adda([sysArgs+6],Y)             #17
+label('ldxw#16a')
+adda(1)                         #16
+adda([sysArgs+6],Y)             #17
+label('ldxw#18a')
+ld([vTmp],X)                    #18
+ld([Y,X])                       #19
+st([Y,Xpp])                     #20
+st([vAC])                       #21
+ld([Y,X])                       #22
+st([vAC+1])                     #23
+label('ldxw#24a')
 ld(hi('ENTER'))                 #24
 st([vCpuSelect])                #25
-ld(hi('NEXTY'),Y)               #26
+adda(1,Y)                       #26
 jmp(Y,'NEXTY')                  #27
 ld(-30/2)                       #28
 
-# MOVF implementation
-label('movf#3a')
-adda(min(0,maxTicks-38/2))      #3
-blt('movf#6a')                  #4
-ld(0,Y)                         #5
-ld([sysArgs+6],X)               #6
+label('stxw#3a')
+ld([vPC+1],Y)                   #3
+ld([vPC])                       #4
+adda(2)                         #5
+st([vPC],X)                     #6
 ld([Y,X])                       #7
 st([Y,Xpp])                     #8
-st([sysArgs+0])                 #9
-ld([Y,X])                       #10
-st([Y,Xpp])                     #11
-st([sysArgs+1])                 #12
-ld([Y,X])                       #13
-st([Y,Xpp])                     #14
-st([sysArgs+2])                 #15
-ld([Y,X])                       #16
-st([Y,Xpp])                     #17
-st([sysArgs+3])                 #18
-ld([Y,X])                       #19
-st([sysArgs+4])                 #20
-ld([sysArgs+5],X)               #21
-ld([sysArgs+0])                 #22
-st([Y,Xpp])                     #23
-ld([sysArgs+1])                 #24
-st([Y,Xpp])                     #25
-ld([sysArgs+2])                 #26
-st([Y,Xpp])                     #27
-ld([sysArgs+3])                 #28
-st([Y,Xpp])                     #29
-ld([sysArgs+4])                 #30
-st([Y,Xpp])                     #31
-ld(hi('ENTER'))                 #32
-st([vCpuSelect])                #33
-ld(hi('NEXTY'),Y)               #34
-jmp(Y,'NEXTY')                  #35
-ld(-38/2)                       #36
-label('movf#6a')
-bra('NEXT')                     #6
-ld(-8/2)                        #7
-
+adda([sysArgs+5])               #9
+st([vTmp])                      #10
+bmi('stxw#13a')                 #11
+suba([sysArgs+5])               #12
+ora([sysArgs+5])                #13
+bmi('stxw#16a')                 #14
+ld([Y,X])                       #15
+bra('stxw#18a')                 #16
+adda([sysArgs+6],Y)             #17
+label('stxw#13a')
+anda([sysArgs+5])               #13
+bmi('stxw#16a')                 #14
+ld([Y,X])                       #15
+bra('stxw#18a')                 #16
+adda([sysArgs+6],Y)             #17
+label('stxw#16a')
+adda(1)                         #16
+adda([sysArgs+6],Y)             #17
+label('stxw#18a')
+ld([vTmp],X)                    #18
+ld([vAC])                       #19
+st([Y,Xpp])                     #20
+ld([vAC+1])                     #21
+bra('ldxw#24a')                 #22
+st([Y,X])                       #23
 
 
 
