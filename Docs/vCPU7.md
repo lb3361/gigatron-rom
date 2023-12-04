@@ -235,14 +235,17 @@ Replacing `CMPHU` and `CMPHS` by something faster and more compact was
 considered desirable but had not been realized in just 30 cycles before.
 
 
-### Signed byte manipulations
+### Miscellaneous
 
-Two instructions can be used to load a signed byte into `vAC`.
+Instructions `LDNI` and `LDSB` can be used to load a signed byte into `vAC`.
+Instruction `ADDHI` adds a byte constant to `vACH` and can be
+used before `ADDI` to add word constant to `vAC`.
 
 | Opcode | Encoding | Cycles | Function
 | ------ | -------- | -------| -------
 | LDNI   | `78 II`      | 16 | Load negative immediate `0xffII` into `vAC`
 | LDSB   | `6e VV`      | 24 | Load signed extended byte `[VV]` into `vAC`
+| ADDHI  | `33 II`      | 16 | Add byte `0xII` to the high accumulator byte `vACH`.
 
 **History:**
 A variant of `LDNI` exists in ROMvX0 but negates its argument (slower)
