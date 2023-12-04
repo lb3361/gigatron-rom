@@ -2157,11 +2157,13 @@ jmp(Y,'negv#13')                #11+overlap
 # Instruction LD: Load byte from zero page (vAC=[D]), 18 cycles
 label('LD')
 ld(AC,X)                        #10
-ld([X])                         #11
-label('ld#12')
-st([vAC])                       #12
-bra('ld#15')                    #13
-ld(0)                           #14
+bra('ld#13')                    #11
+ld([X])                         #13
+
+# Helper for INC.
+label('inc#14')
+bra('ld#16')                    #14
+st([X])                         #15
 
 # Instruction CMPHS: Adjust high byte for signed compare (vACH=XXX), 20-26 cycles
 label('CMPHS_v5')
@@ -2194,9 +2196,12 @@ st([Y,X])                       #15
 bra('REENTER')                  #16
 ld(-20/2)                       #17
 
-# Free instruction slot
-nop()
-nop()
+# Instruction ADDHI (33 xx), 16 cycles
+# * Add constant xx to vACH.
+# * To be used in conjunction with ADDI add a 16 bits constant
+label('ADDHI_v7')
+bra('ldi#12')
+adda([vAC+1])
 
 # Instruction PREFIX35: (used to be BCC)
 label('BCC')
@@ -2311,6 +2316,7 @@ ld([vAC+1])                     #12
 label('LDI')
 st([vAC])                       #10
 ld(0)                           #11
+label('ldi#12')
 st([vAC+1])                     #12
 bra('NEXTY')                    #13
 ld(-16/2)                       #14
@@ -2406,8 +2412,8 @@ adda([vAC])                     #12
 
 # Instruction ANDI: Logical-AND with small constant (vAC&=D), 18 cycles
 label('ANDI')
-bra('ld#12')                    #10
-anda([vAC])                     #11
+anda([vAC])                     #10
+bra('ld#13')                    #11
 nop()                           #12
 
 # Instruction CALLI: Goto immediate address and remember vPC (vLR,vPC=vPC+3,$HHLL-2), 28 cycles
@@ -2537,10 +2543,9 @@ jmp(Y,'movw#16')                #14
 adda(1,X)                       #15
 
 # Continue INC/LD/LDI/LDNI (9 bytes)
-label('inc#14')
-bra('ld#16')                    #14
-st([X])                         #15
-label('ld#15')
+label('ld#13')
+st([vAC])                       #13
+ld(0)                           #14
 st([vAC+1])                     #15
 label('ld#16')
 bra('NEXT')                     #16
@@ -10454,8 +10459,11 @@ ld(0,Y)                         #13
 ld(AC,X)                        #14
 ld(0)                           #15
 suba([Y,X])                     #16
-beq('negv#19')                  #17
+bne('negv#19')                  #17
 st([Y,Xpp])                     #18
+bra('negv#21')                  #19
+suba([Y,X])                     #20
+label('negv#19')
 ld([Y,X])                       #19
 xora(0xff)                      #20
 label('negv#21')
@@ -10463,9 +10471,6 @@ st([Y,X])                       #21
 ld(hi('NEXTY'),Y)               #22
 jmp(Y,'NEXTY')                  #23
 ld(-26/2)                       #24
-label('negv#19')
-bra('negv#21')                  #19
-suba([Y,X])                     #20
 
 
 
