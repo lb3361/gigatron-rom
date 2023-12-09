@@ -1660,16 +1660,21 @@ ld(-20/2)                       #19
 
 # Instruction STW: Store word in zero page ([D],[D+1]=vAC&255,vAC>>8), 20 cycles
 label('STW')
-ld(AC,X)                        #10,20
-adda(1)                         #11
-st([vTmp])                      #12 Address of high byte
-ld([vAC])                       #13
-st([X])                         #14
-ld([vTmp],X)                    #15
-ld([vAC+1])                     #16
-st([X])                         #17
-bra('NEXT')                     #18
-ld(-20/2)                       #19
+ld(AC,X)                        #10
+ld(0,Y)                         #11
+ld([vAC])                       #12
+st([Y,Xpp])                     #13
+ld([vAC+1])                     #14
+st([Y,X])                       #15
+bra('REENTER')                  #16
+ld(-20/2)                       #17
+
+# Instruction ADDHI (33 xx), 16 cycles
+# * Add constant xx to vACH.
+# * To be used in conjunction with ADDI add a 16 bits constant
+label('ADDHI_v7')
+bra('ldi#12')
+adda([vAC+1])
 
 # Instruction BCC: Test AC sign and branch conditionally, 28 cycles
 label('BCC')
@@ -1740,6 +1745,7 @@ ld([Y,X])                       #22
 label('LDI')
 st([vAC])                       #10
 ld(0)                           #11
+label('ldi#12')
 st([vAC+1])                     #12
 bra('NEXTY')                    #13
 ld(-16/2)                       #14

@@ -47,7 +47,8 @@ args = parser.parse_args()
 opcodes = [
   { # [0] is vCPU
     0x11: ('LDWI',  2), 0x1a: ('LD',    1), 0x1f: ('CMPHS', 1),
-    0x21: ('LDW',   1), 0x2b: ('STW',   1), 0x35: ('Bcc',   2),
+    0x21: ('LDW',   1), 0x2b: ('STW',   1), 0x33: ('ADDHI', 1),
+    0x35: ('Bcc',   2),
     0x59: ('LDI',   1), 0x5e: ('ST',    1), 0x63: ('POP',   0),
     0x75: ('PUSH',  0), 0x7f: ('LUP',   1), 0x82: ('ANDI',  1),
     0x85: ('CALLI', 2), 0x88: ('ORI',   1), 0x8c: ('XORI',  1),
