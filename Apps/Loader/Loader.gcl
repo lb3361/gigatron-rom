@@ -26,6 +26,10 @@ gcl0x
   ret
 ] PrintChar=
 
+{ Clear screen }
+\SYS_SetMemory_v2_54 _sysFn=
+$800 i= [do i _sysArgs2= $20a0 _sysArgs0= 54!! >i++ >i, 127& if<>0loop]
+
 { Display ready to load text }
 \SYS_VDrawBits_134 _sysFn=      {Prepare SYS calls}
 $0f20 _sysArgs0=                {Yellow on blue}
