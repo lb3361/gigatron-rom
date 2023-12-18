@@ -60,7 +60,7 @@ gcl0x
 
 [def
   push
-  MenuItem 6- [if<0 $200b else $f059] Pos=
+  MenuItem 7- [if<0 $200b else $e859] Pos=
   MenuItem [do j= $800 Pos+ Pos= j 1- if>=0loop]
   130 {'->'} Char= PrintChar!
   pop ret
@@ -81,22 +81,22 @@ gcl0x
 
     \buttonState, $fe^ [if=0            {buttonRight}
        WipeOutArrow!
-       MenuItem 5- [if<=0 11+ MenuItem=]
+       MenuItem 7- [if<0 14+ MenuItem=]
        $ef \buttonState.]
 
     \buttonState, $fd^ [if=0            {buttonLeft}
        WipeOutArrow!
-       MenuItem 6- [if>=0 MenuItem=]
+       MenuItem 7- [if>=0 MenuItem=]
        $ef \buttonState.]
 
     \buttonState, $fb^ [if=0            {buttonDown}
        WipeOutArrow!
-       MenuItem 5- [if<>0 6- if<>0 <MenuItem++]
+       MenuItem 6- [if<>0 7- if<>0 <MenuItem++]
        $ef \buttonState.]
 
     \buttonState, $f7^ [if=0            {buttonUp}
        WipeOutArrow!
-       MenuItem [if<>0 6- if<>0 MenuItem 1- MenuItem=]
+       MenuItem [if<>0 7- if<>0 MenuItem 1- MenuItem=]
        $ef \buttonState.]
 
     \serialRaw, $57^ [if=0              {W for WozMon}
@@ -111,9 +111,10 @@ gcl0x
     [def
       ##\Snake
       ##\Racer
-      ##\WozMon
+      ##\Pictures
       ##\Mandelbrot
-      ##\Credits
+      ##\Shuttle
+      ##\Frogstroll
       ##\Loader
 
       ##\GtMine
@@ -122,6 +123,7 @@ gcl0x
       ##\TinyBASIC
       ##\MSBASIC
       ##\Apple1
+      ##\Credits
     ]
     MenuItem+ MenuItem+ deek Program=
   ]
@@ -143,16 +145,16 @@ gcl0x
 [def
   #9 `Snake #9 ``` #9 `GtMine     #10
   #9 `Racer #9 ``` #9 `Bricks     #10
-  #9 `WozMon #9 `` #9 `TicTacToe  #10
+  #9 `Pictures ``` #9 `TicTacToe  #10
   #9 `Mandelbrot   #9 `BASIC      #10
-  #9 `Credits #9   #9 `MS`BASIC   #10
-  #9 `Loader #9 `` #9 `Apple-1    #10 #0
+  #9 `Shuttle #9   #9 `MS`BASIC   #10
+  #9 `Frogstroll   #9 `Apple-1    #10 
+  #9 `Loader #9 `` #9 `Credits    #10 #0
 ] MainMenu=
 
 [def
   `Use` #91 `Arrows #93 ``to`select     #10
   `Press` #91 `A #93 ``to`start`program #10
-                                        #10
   `Hold` #91 `Start #93 ``for`reset     #0
 ] HelpText=
 
