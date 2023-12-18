@@ -33,23 +33,27 @@ CFLAGS:=-std=c11 -O3 -Wall
 
 # Development towards "ROM v7"
 
-DEV7APPS=	Snake=Apps/Snake/Snake_v3.gcl\
+DEV7APPS=	packedPictures=Apps/Pictures/packedPictures.rgb\
 		SYS_Racer_v1.py\
 		zippedRacerHorizon=Apps/Racer/Horizon-256x16.rgb\
+		Pictures=Apps/Pictures/Pictures_v3.gcl\
 		Racer=Apps/Racer/Racer_v3.gcl\
-		Mandelbrot=Apps/Mandelbrot/Mandelbrot_v2.gt1\
-		Loader=Apps/Loader/Loader.gcl\
-		Bricks=Apps/Bricks/Bricks_v2.gt1\
-		GtMine=Apps/GtMine/gtmine.gt1\
+		Snake=Apps/Snake/Snake_v3.gt1z\
+		Mandelbrot=Apps/Mandelbrot/Mandelbrot_v2.gt1z\
+		Loader=Apps/Loader/Loader.gt1z\
+		Bricks=Apps/Bricks/Bricks_v2.gt1z\
+		GtMine=Apps/GtMine/gtmine.gt1z\
 		TinyBASIC=Apps/TinyBASIC/TinyBASIC_v6.gcl\
 		TicTac=Apps/TicTac/LoadTicTac_v1.gcl\
 		TicTacGtb=Apps/TicTac/TicTac_v2.gtb\
-		WozMon=Apps/WozMon/WozMon_v2.gcl\
-		Apple1=Apps/Apple-1/Apple-1_v3.gt1\
-		MSBASIC=Apps/MSBASIC/MSBASIC.gt1\
-		Credits=Apps/Credits/Credits.gt1\
-		Egg=Apps/Horizon/Horizon_c.gt1\
-		Boot=Apps/CardBoot/CardBoot.gt1\
+		WozMon=Apps/WozMon/WozMon.gt1z\
+		Apple1=Apps/Apple-1/Apple-1_v3.gt1z\
+		MSBASIC=Apps/MSBASIC/MSBASIC.gt1z\
+		Credits=Apps/Credits/Credits.gt1z\
+		Frogstroll=Apps/More/frogstroll.gt1z\
+		Shuttle=Apps/More/shuttle.gt1z\
+		Egg=Apps/Horizon/Horizon_c.gt1z\
+		Boot=Apps/CardBoot/CardBoot.gt1z\
 		Main=Apps/MainMenu/MainMenu.gcl\
 		Reset=Core/Reset.gcl
 
@@ -258,6 +262,12 @@ ROMv1.rom: Core/* Apps/*/* Makefile interface.json
 #	Generic rules
 #-----------------------------------------------------------------------
 
+ifdef COMSPEC
+E=.exe
+else
+E=
+endif
+
 %.gt1: %.gcl
 	Core/compilegcl.py "$<" `dirname "./$@"`
 
@@ -267,6 +277,13 @@ ROMv1.rom: Core/* Apps/*/* Makefile interface.json
 %.gt1: %.vasm.py
 	env PYTHONPATH=Core python3 "$<"
 	mv out.gt1 "$@"
+
+%.gt1z: %.gt1 Utils/gt1z/gt1z${E}
+	Utils/gt1z/gt1z -f "$<" "$@"
+
+Utils/gt1z/gt1z${E}: Utils/gt1z/gt1z.cpp
+	${MAKE} -C Utils/gt1z
+
 
 %.h: %.gt1
 	# Convert GT1 file into header for including as PROGMEM data
@@ -312,45 +329,6 @@ pull:
 	git stash push
 	git pull https://github.com/kervinck/gigatron-rom
 	git stash pop
-
-#-----------------------------------------------------------------------
-#	C compiler (LCC retargeted for vCPU)
-#-----------------------------------------------------------------------
-
-LCCDIR:=Utils/lcc/build
-export LCCDIR
-LCC:=$(LCCDIR)/lcc
-LCCFLAGS:=-ILibs
-#LCCFLAGS:=-ILibs -Wf-d -Wa-d
-
-lcc:
-	mkdir -p "$(LCCDIR)"
-	mkdir -p "$(LCCDIR)/tst"
-	cd Utils/lcc && env HOSTFILE=etc/gt1h.c make all gttest
-
-%.o: %.c $(wildcard Libs/*.h)
-	$(LCC) $(LCCFLAGS) -c "$<" -o "$@"
-
-libSources:=$(wildcard Libs/*/*.c)
-libObjects:=$(libSources:.c=.o)
-
-.SECONDARY: # Instructs 'make' not to delete intermeditate .o files
-%.gt1: %.o $(libObjects)
-	$(LCC) $(LCCFLAGS) $^ -o "$@"
-
-%.gt1x: %.o $(libObjects)
-	$(LCC) $(LCCFLAGS) $^ -o "$@"
-
-ctest: Libs/Example.gt1
-
-cclean:
-	rm -f Libs/Example.gt1 Libs/*.o Libs/*/*.o
-
-# Moon shot for C compiler: MSCP 1.4 (Marcel's Simple Chess Program)
-# Doesn't work yet. Use as guinea pig to help mature our standard C library
-mscp: Contrib/kervinck/mscp.gt1
-Contrib/kervinck/mscp.o: Contrib/kervinck/mscp.c $(wildcard Libs/*.h)
-	$(LCC) $(LCCFLAGS) -N -P -A -v -c "$<" -o "$@"
 
 #-----------------------------------------------------------------------
 #
