@@ -8,14 +8,40 @@ vCPU interrupts
 vReset
 ------
 
-TODO
+vReset is triggered when vCPU jumps to address 0x1f0. The vCPU code
+stored in 0x1f0 is setup during the cold boot. This code
+executes a private sequence that resets essentials variables then
+loads and executes Reset.gt1. Thanks to a dedicated vCPU instructon,
+this code has been reduced from six bytes to two bytes, making
+space for additional firmware variables. 
+
+vReset could be intercepted by copying and replacing this code by a
+simple CALL xx where xx is the zero page address of a reset
+vector. This is not advised because users would have to
+power cycle the gigatron to restore its normal operation.
+
 
 vIRQ
 ----
+
 Vertical blank interrupt triggering each time [frameCount] wraps
 around to 0 (and the interrupt vector is non-zero).
 
 Interrupt vector: $1f6.$1f7
+
+-- For ROM >= v6
+
+Minimal context of vPC, vAC, and vCpuSelect is stored at $30..$35.
+The mechanism won't save any further context (vLR, vSP, sysArgs, ...)!
+The interrupt handler always starts in vCPU mode.
+
+Return from interrupt sequence: 
+        LDWI $400               ;RTI
+        LUP 0                   ;LUP argument is ignored
+
+This sequence restores the saved context, including vCpuSelect.
+
+-- For ROM < v6
 
 Minimal context of vPC and vAC will be stored at $30..$33. The
 mechanism won't save any further context (vLR, vSP, sysArgs, ...)!
