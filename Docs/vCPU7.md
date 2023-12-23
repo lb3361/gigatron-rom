@@ -64,6 +64,7 @@ call operation.
 | `ALLOC`          | 24 instead of 14 when `vSPH`=0, 28 or 30 otherwise
 | `STLW`           | still 26 when `vSPH`=0, 36 otherwise
 | `LDLW`           | still 26 when `vSPH`=0, 36/38 otherwise
+| `LUP`            | 28 instead of 26
 
 
 ### True 16 bits stack
