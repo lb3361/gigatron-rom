@@ -2406,8 +2406,8 @@ jmp(Y,'mulq#13')
 
 # Instruction LUP: ROM lookup (vAC=ROM[vAC+D]), 26 cycles
 label('LUP')
-ld([vAC+1],Y)                   #10
-jmp(Y,251)                      #11 Trampoline offset
+ld(hi('lup#13'),Y)              #10
+jmp(Y,'lup#13')                 #11
 adda([vAC])                     #12
 
 # Instruction ANDI: Logical-AND with small constant (vAC&=D), 18 cycles
@@ -3054,37 +3054,37 @@ ld([sysArgs+4],X)               #17
 #       ... IRQ payload ...
 #       LDWI $400
 #       LUP  $xx  ==> vRTI
-fillers(until=251-17)
-
-label('vRTI#18')
-ld(-32//2-v6502_adjust)         #18
-adda([vTicks])                  #19
-bge('vRTI#22')                  #20
-ld([vIrqSave+2])                #21
-st([vAC])                       #22
-ld([vIrqSave+3])                #23
-st([vAC+1])                     #24
-ld([vIrqSave+4])                #25
-st([vCpuSelect])                #26
-ld([vTicks])                    #27
-adda(maxTicks-28//2)            #28-28=0
-ld(hi('RESYNC'),Y)              #1
-jmp(Y,'RESYNC')                 #2
-nop()                           #3
+fillers(until=251-16)
 
 label('vRTI#22')
-ld(hi('vRTI#25'),Y)             #22
-jmp(Y,'vRTI#25')                #23
-st([vAC])                       #24
+ld([vIrqSave+2])                #22
+st([vAC])                       #23
+ld([vIrqSave+3])                #24
+st([vAC+1])                     #25
+ld([vIrqSave+4])                #26
+st([vCpuSelect])                #27
+ld([vTicks])                    #28 enough time for immediate resume?
+adda(-36//2-v6502_adjust)       #29
+bge('vRTI#32')                  #30
+ld(hi('RESYNC'),Y)              #31
+jmp(Y,'RESYNC')                 #32
+adda(+36//2+v6502_adjust+       #33
+     maxTicks-30//2)            #33-30=3 (needs maxTicks>=15)
+
+# vRTI immediate resume
+label('vRTI#32')
+ld([vCpuSelect],Y)              #32
+ld(-36/2)                       #33
+jmp(Y,'ENTER')                  #34
+adda([vTicks])                  #35-36=-1
 
 # vRTI entry point
 assert(pc()&255 == 251)         # The landing offset 251 for LUP trampoline is fixed
-ld([vIrqSave+0])                #13
-st([vPC])                       #14
-ld([vIrqSave+1])                #15
-bra('vRTI#18')                  #16
-st([vPC+1])                     #17
-
+ld([vIrqSave+0])                #17
+st([vPC])                       #18
+ld([vIrqSave+1])                #19
+bra('vRTI#22')                  #20
+st([vPC+1])                     #21
 
 
 #-----------------------------------------------------------------------
@@ -5944,15 +5944,6 @@ runVcpu(190-95-extra,           #95 Application cycles (scan line 0)
     '---D line 0 timeout with irq',
     returnTo='vBlankFirst#190')
 
-# vRTI immediate resume
-label('vRTI#25')
-ld([vIrqSave+3])                #25
-st([vAC+1])                     #26
-ld([vIrqSave+4])                #27
-st([vCpuSelect],Y)              #28
-ld(-32//2)                      #29
-jmp(Y,'ENTER')                  #30
-adda([vTicks])                  #31-32=-1
 
 
 # Entered last line of vertical blank (line 40)
@@ -6462,16 +6453,30 @@ ld(-38/2)                            #35 max: 38 + 52 = 90 cycles
 
 
 #-----------------------------------------------------------------------
-# Trampoline return stub
+# LUP implementation
 
-label('lupReturn#19')
-ld(0)                           #19 trampoline returns here
-st([vAC+1])                     #20
-ld([vCpuSelect])                #21 to current interpreter
-adda(1,Y)                       #22
-ld(-26/2)                       #23
-jmp(Y,'NEXT')                   #24 using NEXT
-ld([vPC+1],Y)                   #25
+# LUP on dev7rom runs 4 cycles behind earlier ROMS.
+# Clearing [vAC+1] is now achieved before branching
+# into the rom page instead of in the return suffix.
+# This permits sys_Exec to consult the ROM tables
+# without losing the contents of [vAC+1] and with
+# enough time to increment the lup pointer.
+label('lup#13')
+ld([vAC+1],Y)                   #13
+ld(vAC+1,X)                     #14
+jmp(Y,251)                      #15
+st(0,[X])                       #16 clear [vAC+1]
+
+# The LUP return stub name 'lupReturn#19' is hardcoded in the
+# trampoline code which cannot be changed because asm.py must
+# remain able to compile older roms.
+label('lupReturn#19')           # name hardcoded in the trampoline code
+label('lupReturn#23')           # same name with the proper timing suffix
+ld([vCpuSelect])                #23 to current interpreter
+adda(1,Y)                       #24
+ld(-28/2)                       #25
+jmp(Y,'NEXT')                   #26 using NEXT
+ld([vPC+1],Y)                   #27
 
 
 #-----------------------------------------------------------------------
@@ -6981,35 +6986,30 @@ st([vAC+1])                     #18
 
 
 # uFSM opcode 'uLUP'
-# - LUP byte at address sysArgs[1:0]
-# - increment sysArgs[0] skipping trampolines
+# - set vACL with LUP byte at address sysArgs[1:0]
+# - increment address skipping trampolines
 label('fsm-uLUP')
 ld([fsmState])                  #5
 adda(2)                         #6
-st([sysArgs+6])                 #7 save pc
-ld('fsm-lup#3')                 #8 next fragment
-st([fsmState])                  #9
-ld([sysArgs+1],Y)               #10 jump to trampoline
-jmp(Y,251)                      #11
-ld([sysArgs+0])                 #12 continue to lupReturn#19
+st([fsmState])                  #7
+ld([sysArgs+0])                 #8
+suba(250)                       #9
+beq('fsm-uLup#12')              #10
+ld([sysArgs+1],Y)               #11
+adda(251)                       #12
+st([sysArgs+0])                 #13
+suba(1)                         #14
+jmp(Y,251)                      #15 to trampoline
+nop()                           #16
+label('fsm-uLup#12')
+st([sysArgs+0])                 #12
+ld([sysArgs+1])                 #13
+adda(1)                         #14
+st([sysArgs+1])                 #15
+ld(250)                         #16
+jmp(Y,AC)                       #17 direct jumo saves one cycle
+bra(253)                        #18 would not work for vRTI though
 
-label('fsm-lup#3')
-ld([sysArgs+6])                 #3
-st([fsmState])                  #4 restore pc
-ld([sysArgs+0])                 #5
-suba(250)                       #6
-bne('fsm-lup#9')                #7
-st([sysArgs+0])                 #8 wrap at 251
-ld([sysArgs+1])                 #9
-adda(1)                         #10
-st([sysArgs+1])                 #11
-label('fsm-lup#12')
-bra('NEXT')                     #12
-ld(-14/2)                       #13
-label('fsm-lup#9')
-adda(251)                       #9
-bra('fsm-lup#12')               #10
-st([sysArgs+0])                 #11
 
 # Exec microprogram
 label('syse-prog')
