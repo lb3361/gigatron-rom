@@ -113,7 +113,7 @@ export class Loader {
                 this.cpu.reset();
                 return replicate(100, this.atPosedge(VSYNC));
             }),
-            replicate(5, this.pressButton(BUTTON_DOWN, 1, 1)),
+            replicate(10, this.pressButton(BUTTON_DOWN, 1, 1)),
             this.pressButton(BUTTON_A, 1, 60)
         );
     }
