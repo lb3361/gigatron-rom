@@ -181,8 +181,8 @@ gcl0x
 
     1^ [if=0                    {Only 1 means success}
       FindBoot! _sysArgs0=      {Load Boot from ROM and execute}
-      $200 _vLR=
-      \SYS_Exec_88 _sysFn= 88!!]
+      [if=0 pop ret]
+      $200 _vLR= \SYS_Exec_88 _sysFn= 88!!]
 
     j 1- if>0loop]              {Retry}
 
@@ -209,7 +209,7 @@ gcl0x
 [def
   q=
   \SYS_ReadRomDir_v5_80 _sysFn=
-  0 [do 80!! p=
+  0 [do 80!! p= if<>0
     q deek _sysArgs0^ [if=0
      2 q+ deek _sysArgs2^ [if=0
        4 q+ deek _sysArgs4^ [if=0
