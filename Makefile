@@ -33,11 +33,9 @@ CFLAGS:=-std=c11 -O3 -Wall
 
 # Development towards "ROM v7"
 
-DEV7APPS=	packedPictures=Apps/Pictures/packedPictures.rgb\
-		SYS_Racer_v1.py\
-		zippedRacerHorizon=Apps/Racer/Horizon-256x16.rgb\
-		Pictures=Apps/Pictures/Pictures_v3.gcl\
+DEV7APPS=	zippedRacerHorizon=Apps/Racer/Horizon-256x16.rgb\
 		Racer=Apps/Racer/Racer_v3.gcl\
+		SYS_Racer_v1.py\
 		Snake=Apps/Snake/Snake_v3.gt1z\
 		Mandelbrot=Apps/Mandelbrot/Mandelbrot_v2.gt1z\
 		Loader=Apps/Loader/Loader.gt1z\
@@ -52,27 +50,36 @@ DEV7APPS=	packedPictures=Apps/Pictures/packedPictures.rgb\
 		Credits=Apps/Credits/Credits.gt1z\
 		Frogstroll=Apps/More/frogstroll.gt1z\
 		Shuttle=Apps/More/shuttle.gt1z\
-		Egg=Apps/Horizon/Horizon_c.gt1z\
-		Boot=Apps/CardBoot/CardBoot.gt1z\
-		Main=Apps/MainMenu/MainMenu.gcl\
-		Reset=Core/Reset.gcl
+		Egg=Apps/Horizon/Horizon_c.gt1z
 
 dev7.rom: Core/* Apps/*/* Makefile interface.json
 	python3 Core/dev.asm.py \
 		-DROMNAME=\"$@\" \
-		${DEV7APPS}
+		packedPictures=Apps/Pictures/packedPictures.rgb\
+		Pictures=Apps/Pictures/Pictures_v3.gcl\
+		${DEV7APPS}\
+		Boot=Apps/CardBoot/CardBoot.gt1z\
+		Main=Apps/MainMenu/MainMenu.gcl\
+		Reset=Core/Reset.gcl
 
 dev128k7.rom: Core/* Apps/*/* Makefile interface.json
 	python3 Core/dev.asm.py \
 		-DROMNAME=\"$@\" -DDISPLAYNAME=\"[128k7]\"\
 		-DWITH_128K_BOARD=1 \
-		${DEV7APPS}
+		-DROMNAME=\"$@\" \
+		${DEV7APPS}\
+		SpiSd=Apps/More/system7.gt1z\
+		Main=Apps/MainMenu/MainMenu_sd.gcl\
+		Reset=Core/Reset.gcl
 
 dev512k7.rom: Core/* Apps/*/* Makefile interface.json
 	python3 Core/dev.asm.py \
 		-DROMNAME=\"$@\" -DDISPLAYNAME=\"[512k7]\"\
 		-DWITH_512K_BOARD=1 \
-		${DEV7APPS}
+		${DEV7APPS}\
+		SpiSd=Apps/More/system7.gt1z\
+		Main=Apps/MainMenu/MainMenu_sd.gcl\
+		Reset=Core/Reset.gcl
 
 
 run: Docs/gtemu $(DEV)
