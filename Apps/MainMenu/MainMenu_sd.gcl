@@ -143,7 +143,7 @@ gcl0x
 ] Newline=
 
 [def
-  #9 `SdCard #9 `` #9 `GtMine     #10
+  #9 `SpiCard #9   #9 `GtMine     #10
   #9 `Snake #9 ``` #9 `Bricks     #10
   #9 `Racer #9 ``` #9 `TicTacToe  #10
   #9 `Mandelbrot   #9 `BASIC      #10
