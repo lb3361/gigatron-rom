@@ -88,7 +88,7 @@ run: Docs/gtemu $(DEV)
 	# !!! Set terminal width to >225 chars !!!
 	Docs/gtemu $(DEV) | less -p 'line 0'
 
-export jsEmu=Contrib/PhilThomas/src
+export jsEmu=Utils/runjs/src
 runjs: $(DEV)
 	# Run ROM in javascript emulator in web browser (macOS)
 	cd "$(jsEmu)" && ln -sf ../../../$(DEV) gigatron.rom
