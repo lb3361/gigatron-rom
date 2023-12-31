@@ -4,12 +4,14 @@ Utilities for Gigatron development
 Files
 =====
 ```
-BabelFish/BabelFish.ino         Sketch to install on Arduino for Gigatron hookup
+BabelFish/                      Sketch to install on Arduino for Gigatron hookup
 gcl.vim                         VIM syntax highlighting file
 raw24toraw6.py                  Raw 24bpp to GCL-format packed 6bpp converter
 sendFile.py                     Send a GT1 or BASIC file from laptop/PC to Gigatron
 SerialTest.gt1                  Test file for verifying serial transmission
 gt1dump.py                      Dump GT1 file to show internal structure
+gt1z/                           GT1 file compressor
+runjs/                          Variant Phil Thomas' javascript emulator (128k, spi)
 ```
 
 Installing VIM syntax highlighting
@@ -53,7 +55,7 @@ optional arguments:
   -p PORT, --port PORT  USB port to Arduino (default is auto-detect)
 ```
 
-Using gt1file.py
+Using gt1dump.py
 ================
 
 ```

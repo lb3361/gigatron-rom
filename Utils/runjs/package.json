@@ -1,0 +1,22 @@
+{
+    "name": "gigatron",
+    "version": "1.0.0",
+    "description": "Gigatron Emulator",
+    "main": "index.js",
+    "scripts": {
+        "start": "http-server -p 8000 -c-1 -g",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "author": "Phil Thomas",
+    "license": "SEE LICENSE IN LICENSE",
+    "devDependencies": {},
+    "dependencies": {},
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/PhilThomas/gigatron.git"
+    },
+    "bugs": {
+        "url": "https://github.com/PhilThomas/gigatron/issues"
+    },
+    "homepage": "https://github.com/PhilThomas/gigatron#readme"
+}
