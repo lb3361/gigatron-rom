@@ -432,7 +432,8 @@ struct Chart
         c[i] = bestc;
         p[i] = m[i] = n[i] = -1;
       }
-    c[0] = p[0] = 0;
+    c[0] = 1;
+    p[0] = 0;
     m[0] = n[0] = offset;
   }
 
@@ -457,7 +458,7 @@ struct Chart
     while (n[pi] < 0)
       pi = p[pi];
     int nlits = i - pi + 1;
-    int cost = 1 + nlits;
+    int cost = nlits;
     if (nlits >= 7)
       cost++;
     add<0>(pi, i+1, cost);
@@ -471,8 +472,6 @@ struct Chart
     int maxj = std::min(l - i, (madr | 0xff) + 1 - madr);
     int cost = 0;
     int s = i;
-    if (n[s] >= 0)
-      cost++;                   // token needed between matches
     while (m[s] < 0)
       s = p[s];
     if (m[s] != off)
@@ -500,9 +499,7 @@ struct Chart
         if (last >= 0) {
           if (j - last == 15)
             cost++;
-          if (i + j + 1 == l)
-            cost++;             // extra token needed to end segment
-          add(i, i+j+1, cost, off, off);
+          add(i, i+j+1, cost+1, off, off);
         } else {
           cost++;
           if (j + last == 6)
@@ -616,7 +613,7 @@ decompress(std::string fin, std::string fout, bool verify)
   int addr = buffer[0] * 256 + buffer[1];
   int segaddr = addr;
   int offset = 1;
-  info<1>("-- 0x%04x", addr);
+  info<2>("-- 0x%04x", addr);
   while(f.good())
     {
       // Read token DLLLMMMM
@@ -696,7 +693,9 @@ decompress(std::string fin, std::string fout, bool verify)
       GMem ref;
       ref.load(fout);
       if (mem != ref)
-        error("Decompressing '%s' does not match '%s'", fin.c_str(), fout.c_str());
+        error("decompressing '%s' does not match '%s'", fin.c_str(), fout.c_str());
+      else
+        info<1>("decompressing '%s' matches '%s'", fin.c_str(), fout.c_str());
     }
   else
     {
