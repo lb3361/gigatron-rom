@@ -114,7 +114,27 @@ $1e8 i= [do $7b i. i 2+ i= $1f0 i^ if<>0loop]
 
 \FFPage \sysArgs3. $ff \sysArgs1: 0 \sysArgs0. 54!!
 
+{ What to do when not finding System files }
 
+[def _Failed=*
+  \frameCount, 180+ \vACL, i=                        {delay 180/60 secs}
+  [do \frameCount, i^ if<>0loop]
+  \SYS_ReadRomDir_v5_80 _sysFn=                      {search Main}
+  0 [do 80!! p= if<>0
+      $614d _sysArgs0^ [if=0
+        $6e69 _sysArgs2^ [if=0
+           _sysArgs4 _sysArgs6| [if=0                {found Main}
+              \SYS_SetMemory_v2_54 _sysFn=
+              0 pVideoTop. 32 \sysArgs1.
+              $1800 [do i=                           {clear screen}
+                _sysArgs2= 160 \sysArgs0. 54!!
+                >i, $78+ 1<< j= >i, j.
+                $100 i+ if>0loop]
+              p _sysArgs0= $200 _vLR=                {exec Main}
+              \SYS_Exec_88 _sysFn= 88!!]]]
+      p loop]
+  ##\HALT 
+]
 
 
 {-----------------------------------------------------------------------+
@@ -1548,7 +1568,7 @@ ret]
 32 pVideoTop.                    {Not found!}
 \Newline!
 [def `SYSTEM7.GT1`not`found! #0 ] \PrintText!
-##\HALT                          {Halt if not found}
+\Failed!
 
 
 
