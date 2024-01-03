@@ -10919,168 +10919,87 @@ if pc()&255 >= 251:                     # Don't start in a trampoline region
   align(0x100)
 
 for application in argv[1:]:
-  print()
+    print()
 
-  # Determine label
-  if '=' in application:
-    # Explicit label given as 'label=filename'
-    name, application = application.split('=', 1)
-  else:
-    # Label derived from filename itself
-    name = application.rsplit('.', 1)[0] # Remove extension
-    name = name.rsplit('/', 1)[-1]       # Remove path
-  print('Processing file %s label %s' % (application, name))
+    # Determine label
+    if '=' in application:
+        # Explicit label given as 'label=filename'
+        name, application = application.split('=', 1)
+    else:
+        # Label derived from filename itself
+        name = application.rsplit('.', 1)[0] # Remove extension
+        name = name.rsplit('/', 1)[-1]       # Remove path
+    print('Processing file %s label %s' % (application, name))
 
-  C('+-----------------------------------+')
-  C('| %-33s |' % application)
-  C('+-----------------------------------+')
+    C('+-----------------------------------+')
+    C('| %-33s |' % application)
+    C('+-----------------------------------+')
 
-  # Pre-compiled GT1 files
-  if application.endswith(('.gt1', '.gt1x', '.gt1z')):
-    print('Load type .gt1 at $%04x' % pc())
-    with open(application, 'rb') as f:
-      raw = bytearray(f.read())
-    insertRomDir(name)
-    label(name)
-    if not application.endswith('.gt1z') and raw[0] == 0 and raw[1] + raw[2] > 0xc0:
-      highlight('Warning: zero-page conflict with ROM loader (SYS_Exec_88)')
-    program = gcl.Program(None)
-    for byte in raw:
-      program.putInRomTable(byte)
-    program.end()
+    # Pre-compiled GT1 files
+    if application.endswith(('.gt1', '.gt1x', '.gt1z')):
+        print('Load type .gt1 at $%04x' % pc())
+        with open(application, 'rb') as f:
+            raw = bytearray(f.read())
+        if pc() & 255 > 250:
+            align(0x100,250)
+        insertRomDir(name)
+        label(name)
+        for byte in raw:
+            ld(byte)
+            if pc() & 255 == 251:
+                trampoline()
 
-  # GCL files
-  #----------------------------------------------------------------
-  #  !!! GCL programs using *labels* "_L=xx" must be cautious !!!
-  # Those labels end up in the same symbol table as the ROM build,
-  # and name clashes cause havoc. It's safer to precompile such
-  # applications into .gt1/.gt1x files. (This warning doesn't apply
-  # to ordinary GCL variable names "xx A=".)
-  #----------------------------------------------------------------
-  elif application.endswith('.gcl'):
-    print('Compile type .gcl at $%04x' % pc())
-    insertRomDir(name)
-    label(name)
-    program = gcl.Program(name, romName=DISPLAYNAME)
-    program.org(userCode)
-    zpReset(userVars)
-    for line in open(application).readlines():
-      program.line(line)
-    # finish
-    program.end()            # 00
-    program.putInRomTable(2) # exech
-    program.putInRomTable(0) # execl
+    # GCL files
+    #----------------------------------------------------------------
+    #  !!! GCL programs using *labels* "_L=xx" must be cautious !!!
+    # Those labels end up in the same symbol table as the ROM build,
+    # and name clashes cause havoc. It's safer to precompile such
+    # applications into .gt1/.gt1x files. (This warning doesn't apply
+    # to ordinary GCL variable names "xx A=".)
+    #----------------------------------------------------------------
+    elif application.endswith('.gcl'):
+        print('Compile type .gcl at $%04x' % pc())
+        insertRomDir(name)
+        label(name)
+        program = gcl.Program(name, romName=DISPLAYNAME)
+        program.org(userCode)
+        zpReset(userVars)
+        for line in open(application).readlines():
+            program.line(line)
+        # finish
+        program.end()            # 00
+        program.putInRomTable(2) # exech
+        program.putInRomTable(0) # execl
 
-  # Application-specific SYS extensions
-  elif application.endswith('.py'):
-    print('Include type .py at $%04x' % pc())
-    label(name)
-    importlib.import_module(name)
+    # Application-specific SYS extensions
+    elif application.endswith('.py'):
+        print('Include type .py at $%04x' % pc())
+        label(name)
+        importlib.import_module(name)
 
-  # GTB files
-  elif application.endswith('.gtb'):
-    print('Link type .gtb at $%04x' % pc())
-    zpReset(userVars)
-    label(name)
-    program = gcl.Program(name)
-    # BasicProgram comes from TinyBASIC.gcl
-    address = symbol('BasicProgram')
-    if not has(address):
-      highlight('Error: TinyBASIC must be compiled-in first')
-    program.org(address)
-    i = 0
-    for line in open(application):
-      i += 1
-      line = line.rstrip()[0:25]
-      number, text = '', ''
-      for c in line:
-        if c.isdigit() and len(text) == 0:
-          number += c
-        else:
-          text += c
-      basicLine(address, int(number), text)
-      address += 32
-      if address & 255 == 0:
-        address += 160
-    basicLine(address+2, None, 'RUN')           # Startup command
-    # Buffer comes from TinyBASIC.gcl
-    basicLine(symbol('Buffer'), address, None)  # End of program
-    program.putInRomTable(0)
-    program.end()
-    print(' Lines', i)
+    # For Pictures
+    elif application.endswith(('/packedPictures.rgb')):
+        print(('Convert type packedPictures.rgb at $%04x' % pc()))
+        f = open(application, 'rb')
+        raw = bytearray(f.read())
+        f.close()
+        label(name)
+        for i in range(len(raw)):
+            if i&255 < 251:
+                ld(raw[i])
+            elif pc()&255 == 251:
+                trampoline()
 
-  # Simple sequential RGB file (for Racer horizon image)
-  elif application.endswith('-256x16.rgb'):
-    width, height = 256, 16
-    print('Convert type .rgb/sequential at $%04x' % pc())
-    f = open(application, 'rb')
-    raw = bytearray(f.read())
-    f.close()
-    insertRomDir(name)
-    label(name)
-    packed, quartet = [], []
-    for i in range(0, len(raw), 3):
-      R, G, B = raw[i+0], raw[i+1], raw[i+2]
-      quartet.append((R//85) + 4*(G//85) + 16*(B//85))
-      if len(quartet) == 4:
-        # Pack 4 pixels in 3 bytes
-        packed.append( ((quartet[0]&0b111111)>>0) + ((quartet[1]&0b000011)<<6) )
-        packed.append( ((quartet[1]&0b111100)>>2) + ((quartet[2]&0b001111)<<4) )
-        packed.append( ((quartet[2]&0b110000)>>4) + ((quartet[3]&0b111111)<<2) )
-        quartet = []
-    for i in range(len(packed)):
-      ld(packed[i])
-      if pc()&255 == 251:
-        trampoline()
-    print(' Pixels %dx%d' % (width, height))
+    # Other files
+    elif application.endswith('.gtb'):
+        highlight('Error: Please use Utils/gtbtogt1.py')
+    elif application.endswith('.rgb'):
+        highlight('Error: Please use Utils/imgtogt1.py')
+    else:
+        assert False
 
-  # Random access RGB files (for Pictures application)
-  elif application.endswith('-160x120.rgb'):
-    if pc()&255 > 0:
-      trampoline()
-    print('Convert type .rgb/parallel at $%04x' % pc())
-    f = open(application, 'rb')
-    raw = f.read()
-    f.close()
-    label(name)
-    for y in range(0, qqVgaHeight, 2):
-      for j in range(2):
-        comment = 'Pixels for %s line %s' % (name, y+j)
-        for x in range(0, qqVgaWidth, 4):
-          bytes = []
-          for i in range(4):
-            R = raw[3 * ((y + j) * qqVgaWidth + x + i) + 0]
-            G = raw[3 * ((y + j) * qqVgaWidth + x + i) + 1]
-            B = raw[3 * ((y + j) * qqVgaWidth + x + i) + 2]
-            bytes.append( (R//85) + 4*(G//85) + 16*(B//85) )
-          # Pack 4 pixels in 3 bytes
-          ld( ((bytes[0]&0b111111)>>0) + ((bytes[1]&0b000011)<<6) ); comment = C(comment)
-          ld( ((bytes[1]&0b111100)>>2) + ((bytes[2]&0b001111)<<4) )
-          ld( ((bytes[2]&0b110000)>>4) + ((bytes[3]&0b111111)<<2) )
-        if j==0:
-          trampoline3a()
-        else:
-          trampoline3b()
-    print(' Pixels %dx%d' % (width, height))
-
-  # XXX Provisionally bring ROMv1 egg back as placeholder for Pictures
-  elif application.endswith(('/gigatron.rgb', '/packedPictures.rgb')):
-    print(('Convert type gigatron.rgb at $%04x' % pc()))
-    f = open(application, 'rb')
-    raw = bytearray(f.read())
-    f.close()
-    label(name)
-    for i in range(len(raw)):
-      if i&255 < 251:
-        ld(raw[i])
-      elif pc()&255 == 251:
-        trampoline()
-
-  else:
-    assert False
-
-  C('End of %s, size %d' % (application, pc() - symbol(name)))
-  print(' Size %s' % (pc() - symbol(name)))
+    C('End of %s, size %d' % (application, pc() - symbol(name)))
+    print(' Size %s' % (pc() - symbol(name)))
 
 #-----------------------------------------------------------------------
 # ROM directory
