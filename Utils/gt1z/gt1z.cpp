@@ -118,7 +118,7 @@ public:
   GMem();
   void load(std::string filename, bool strip=true);
   void save(std::string filename);
-  void segment();
+  void segment(bool zfill = false);
   void tokenize(int maxk = 256);
   bool operator==(const GMem &other) const
      { return exec == other.exec && ram == other.ram; }
@@ -212,7 +212,7 @@ GMem::save(std::string filename)
 }
 
 void
-GMem::segment()
+GMem::segment(bool zfill)
 {
   segments.clear();
   for (int ah = 0; ah < 65536; ah += 256)
@@ -225,8 +225,17 @@ GMem::segment()
           int s = al;
           if (al < 256)
             {
-              while(ram[ah+al] != -1 && al < 256)
-                al++;
+              if (zfill) {
+                al = 256;
+                while(ram[ah+al-1] == -1)
+                  al--;
+                for (int i=s; i<al; i++)
+                  if (ram[ah+i] < 0)
+                    ram[ah+i] = 0;
+              } else {
+                while(ram[ah+al] != -1 && al < 256)
+                  al++;
+              }
               segments.push_back(std::make_pair(ah+s, al-s));
             }
         }
@@ -552,13 +561,13 @@ struct Chart
 };
 
 int
-compress(std::string fin, std::string fout)
+compress(std::string fin, std::string fout, bool zfill)
 {
   info<1>("compress('%s','%s')", fin.c_str(), fout.c_str());
 
   GMem mem;
   mem.load(fin);
-  mem.segment();
+  mem.segment(zfill);
   mem.tokenize(2);  // catalog all two-byte sequences
 
   Outputter f(fout);
@@ -594,7 +603,7 @@ compress(std::string fin, std::string fout)
  */
 
 int
-decompress(std::string fin, std::string fout, bool verify)
+decompress(std::string fin, std::string fout, bool verify, bool zfill)
 {
   info<1>("decompress('%s','%s',%d)", fin.c_str(), fout.c_str(), (verify)?1:0);
 
@@ -692,6 +701,8 @@ decompress(std::string fin, std::string fout, bool verify)
     {
       GMem ref;
       ref.load(fout);
+      if (zfill)
+        ref.segment(true);
       if (mem != ref)
         error("decompressing '%s' does not match '%s'", fin.c_str(), fout.c_str());
       else
@@ -722,6 +733,7 @@ usage()
           " -v   Verify GT1Z file <fin> against GT1 file <fout>\n"
           " -f   Overwrites existing output file\n"
           " -r   Warn if the file is not relocatable\n"
+          " -z   Pad space between segments in a same page with zeroes\n"
           " -D   Increases verbosity level\n" );
   std::exit(10);
 }
@@ -755,6 +767,7 @@ main(int argc, const char **argv)
   int mode = 0;
   int force = 0;
   int reloc = 0;
+  int zfill = 0;
   std::string fin;
   std::string fout;
   /* Parse arguments */
@@ -776,6 +789,9 @@ main(int argc, const char **argv)
               break;
             case 'D':
               verbose++;
+              break;
+            case 'z':
+              zfill++;
               break;
             case 'r':
               reloc++;
@@ -804,9 +820,9 @@ main(int argc, const char **argv)
     error("not overwriting file '%s'", fout.c_str());
   relocatable = 1;
   if (mode != 'c')
-    decompress(fin, fout, mode != 'd');
+    decompress(fin, fout, mode != 'd', zfill);
   else
-    compress(fin, fout);
+    compress(fin, fout, zfill);
   if (reloc && !relocatable)
     info<0>("file '%s' is not relocatable",
             ((mode == 'c') ? fout : fin).c_str());

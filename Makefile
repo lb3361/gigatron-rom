@@ -33,17 +33,16 @@ CFLAGS:=-std=c11 -O3 -Wall
 
 # Development towards "ROM v7"
 
-DEV7APPS=	zippedRacerHorizon=Apps/Racer/Horizon-256x16.rgb\
-		Racer=Apps/Racer/Racer_v3.gcl\
-		SYS_Racer_v1.py\
+DEV7APPS=	RacerHorizon=Apps/Racer/Horizon-256x16.gt1z\
+		Racer=Apps/Racer/Racer.gt1z\
+		SYS_Racer.py\
 		Snake=Apps/Snake/Snake_v3.gt1z\
 		Mandelbrot=Apps/Mandelbrot/Mandelbrot_v2.gt1z\
 		Loader=Apps/Loader/Loader.gt1z\
 		Bricks=Apps/Bricks/Bricks_v2.gt1z\
 		GtMine=Apps/GtMine/gtmine.gt1z\
-		TinyBASIC=Apps/TinyBASIC/TinyBASIC_v6.gcl\
-		TicTac=Apps/TicTac/LoadTicTac_v1.gcl\
-		TicTacGtb=Apps/TicTac/TicTac_v2.gtb\
+		TinyBASIC=Apps/TinyBASIC/TinyBASIC_v6.gt1z\
+		TicTac=Apps/TicTac/TicTac_v2.gt1z\
 		WozMon=Apps/WozMon/WozMon.gt1z\
 		Apple1=Apps/Apple-1/Apple-1_v3.gt1z\
 		MSBASIC=Apps/MSBASIC/MSBASIC.gt1z\
@@ -291,6 +290,7 @@ endif
 Utils/gt1z/gt1z${E}: Utils/gt1z/gt1z.cpp
 	${MAKE} -C Utils/gt1z
 
+.SECONDARY:
 
 %.h: %.gt1
 	# Convert GT1 file into header for including as PROGMEM data
