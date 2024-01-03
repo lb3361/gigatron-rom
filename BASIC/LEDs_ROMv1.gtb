@@ -6,7 +6,7 @@
 10'Slow LED sequencer
 20 POKE 47,255:'Slowest
 30 FOR N=0 TO 15
-35 POKE 45,255:'Max delay
+35 POKE 47,255:'Max delay
 39'Set LED state
 40 POKE 20,N
 49'Reset frame counter
