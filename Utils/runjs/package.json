@@ -10,7 +10,9 @@
     "author": "Phil Thomas",
     "license": "SEE LICENSE IN LICENSE",
     "devDependencies": {},
-    "dependencies": {},
+    "dependencies": {
+        "http-server" : ">=13.0.0"
+    },
     "repository": {
         "type": "git",
         "url": "git+https://github.com/PhilThomas/gigatron.git"

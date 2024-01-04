@@ -197,9 +197,11 @@ $(function() {
      */
     function loadGt1(file) {
         gamepad.stop();
+        spi.stop();
         loader.load(file)
             .pipe(finalize(() => {
                 gamepad.start();
+                spi.start();
             }))
             .subscribe({
                 error: (error) => showError($(`\
