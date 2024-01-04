@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 
 import sys, os, argparse, re
-from PIL import Image
-import PIL
-
 
 # ----------------------------------------
 # UTILITIES
 
-progname = 'imgtogt1'
+progname = 'gtbtogt1'
 
 def lo(x):
     return x & 0xff
@@ -19,7 +16,7 @@ def hi(x):
 def convert(args):
     address = args.start
     outbytes = bytearray()
-    
+
     # basic lines
     with open(args.infile,'r') as fin:
         for line in fin:
@@ -51,41 +48,27 @@ def convert(args):
 
     # boot code
     buffer = args.start - 32
-    boot=  [ 0x59, 0xef,                     #  LDI    SYS_ReadRomDir
-             0x2b, 0x22,                     #  STW    sysFn
-             0x59, 0x00,                     #  LDI    0
-             0xb4, 0xe6,                     #  SYS    80
-             0x2b, 0x30,                     #  STW    $30
-             0x35, 0x3f, 0xe9,               #  BEQ    loop
-             0x11, 0x54, 0x69,               #  LDWI   $6954
-             0xfc, 0x24,                     #  XORW   $24
-             0x35, 0x72, 0xe9,               #  BNE    loop
-             0x11, 0x6e, 0x79,               #  LDWI   $796e
-             0xfc, 0x26,                     #  XORW   $26
-             0x35, 0x72, 0xe9,               #  BNE    loop
-             0x11, 0x42, 0x41,               #  LDWI   $4142
-             0xfc, 0x28,                     #  XORW   $28
-             0x35, 0x72, 0xe9,               #  BNE    loop
-             0x11, 0x53, 0x49,               #  LDWI   $4953
-             0xfc, 0x2a,                     #  XORW   $2a
-             0x35, 0x72, 0xe9,               #  BNE    loop
-             0x21, 0x30,                     #  LDW    $30
-             0x2b, 0x24,                     #  STW    sysArgs
-             0x59, 0xad,                     #  LDI    SYS_Exec_88
-             0x2b, 0x22,                     #  STW    sysFn
-             0xcd, 0xd7,                     #  DEF    *+2
-             0xb4, 0xe2,                     #  SYS    88
-             0xcf, 0x18,                     #  CALL   vAC
-             0x11, lo(buffer), hi(buffer),   #  LDWI   buffer
-             0x2b, 0x30,                     #  STW    $30
-             0x11, lo(address), hi(address), #  LDWI   $7777
-             0xf3, 0x30,                     #  DOKE   $30
-             0x11, 0x00, 0x02,               #  LDWI   $0200
-             0x2b, 0x1a,                     #  STW    vLR
-             0xff,                           #  RET
-             0x21, 0x30,               # loop:  LDW    $30
-             0x35, 0x72, 0xa4,               #  BNE    $0206
-             0xb4, 0x80 ]                    #  HALT
+
+    r'''
+        [ 0 p= \SYS_ReadRomDir_v5_80 _sysFn=
+          [do p 80!! p=
+            $6954 _sysArgs0^ if<>0loop
+            $796e _sysArgs2^ if<>0loop
+            $4142 _sysArgs4^ if<>0loop
+            $4953 _sysArgs6^ if<>0loop]
+          p _sysArgs0= \SYS_Exec_88 _sysFn= [def 88!!] call
+          \buffer p= \address p: $200 _vLR= ret ]
+    '''
+
+    boot = [ 0x59, 0x00, 0x2b, 0x30, 0x59, 0xef, 0x2b, 0x22, 0x21,
+             0x30, 0xb4, 0xe6, 0x2b, 0x30, 0x11, 0x54, 0x69, 0xfc,
+             0x24, 0x35, 0x72, 0xa6, 0x11, 0x6e, 0x79, 0xfc, 0x26,
+             0x35, 0x72, 0xa6, 0x11, 0x42, 0x41, 0xfc, 0x28, 0x35,
+             0x72, 0xa6, 0x11, 0x53, 0x49, 0xfc, 0x2a, 0x35, 0x72,
+             0xa6, 0x21, 0x30, 0x2b, 0x24, 0x59, 0xad, 0x2b, 0x22,
+             0xcd, 0xd8, 0xb4, 0xe2, 0xcf, 0x18, 0x11, lo(buffer),
+             hi(buffer), 0x2b, 0x30, 0x11, lo(address), hi(address),
+             0xf3, 0x30, 0x11, 0x00, 0x02, 0x2b, 0x1a, 0xff ]
 
     outbytes.extend([0x7f, 0xa0, len(boot)])
     outbytes.extend(boot)
