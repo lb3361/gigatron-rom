@@ -131,6 +131,15 @@ export class Spi {
         };
         reader.readAsArrayBuffer(file);
     }
+
+    /** enable/disable SD card emulation */
+    stop() {
+        this.vhdlen = 0;
+    }
+    start() {
+        if (this.vhd)
+            this.vhdlen = this.vhd.length;
+    }
     
     /** Set state (action,context) */
     set_wait_state(ctx) {
@@ -185,7 +194,7 @@ export class Spi {
         let a = this.action;
         switch(a) {
         case ACTION_WAIT:
-            if (mosi == 0xff || this.vhdlen == 0) { return 0xff; }
+            if (mosi == 0xff || this.vhdlen <= 0) { return 0xff; }
             break;
         case ACTION_RECV:
             this.buffer[this.count] = mosi;
