@@ -3418,25 +3418,25 @@ ld([vTicks])                    #17
 #       v6502 right shift instruction
 #-----------------------------------------------------------------------
 
-label('v6502_lsr#30')
-ld([v6502_ADH],Y)               #30 Result
-st([Y,X])                       #31
-st([v6502_Qz])                  #32 Z flag
-st([v6502_Qn])                  #33 N flag
-ld(hi('v6502_next'),Y)          #34
-ld(-38/2)                       #35
-jmp(Y,'v6502_next')             #36
-#nop()                          #37 Overlap
+label('v6502_lsr#28')
+ld([v6502_ADH],Y)               #28 Result
+st([Y,X])                       #29
+st([v6502_Qz])                  #30 Z flag
+st([v6502_Qn])                  #31 N flag
+ld(hi('v6502_next'),Y)          #32
+ld(-36/2)                       #33
+jmp(Y,'v6502_next')             #34
+#nop()                          #35 Overlap
 #
-label('v6502_ror#38')
-ld([v6502_ADH],Y)               #38,38 Result
-ora([v6502_BI])                 #39 Transfer bit 8
-st([Y,X])                       #40
-st([v6502_Qz])                  #41 Z flag
-st([v6502_Qn])                  #42 N flag
-ld(hi('v6502_next'),Y)          #43
-jmp(Y,'v6502_next')             #44
-ld(-46/2)                       #45
+label('v6502_ror#36')
+ld([v6502_ADH],Y)               #36,38 Result
+ora([v6502_BI])                 #37 Transfer bit 8
+st([Y,X])                       #38
+st([v6502_Qz])                  #39 Z flag
+st([v6502_Qn])                  #40 N flag
+ld(hi('v6502_next'),Y)          #41
+jmp(Y,'v6502_next')             #42
+ld(-44/2)                       #43
 
 #-----------------------------------------------------------------------
 # Relays for vCPU right shift instructions
@@ -4457,7 +4457,7 @@ ld(-62/2)                       #59
 
 #-----------------------------------------------------------------------
 
-align(0x100)
+align(0x100, size=0x100)
 
 label('sys_ExpanderControl')
 ld(hi(ctrlBits),Y)                  #18
@@ -4480,9 +4480,14 @@ if WITH_512K_BOARD:
   xora(0xf0)                          #24
   bne('sysEx#27')                     #25
   ctrl(Y,X)                           #26 issue ctrl code
-  ld(hi('sysEx#30'),Y)                #27
-  jmp(Y,'sysEx#30')                   #28 jump to a place with more space
-  ld([vAC+1])                         #29
+  ld([vAC+1])                         #27
+  xora([videoModeC])                  #28
+  anda(0xfe)                          #29 Save 7 bits of extended banking
+  xora([videoModeC])                  #30 code into videomodeC.
+  st([videoModeC])                    #31
+  ld(hi('NEXTY'),Y)                   #32
+  jmp(Y,'NEXTY')                      #33
+  ld(-36/2)                           #34
 elif WITH_128K_BOARD:
   st([ctrlCopy],X)                    #24
   xora([ctrlVideo])                   #25
@@ -4610,20 +4615,18 @@ anda(1)                         #17
 adda(127)                       #18
 anda(128)                       #19
 st([v6502_BI])                  #20 The real 6502 wouldn't use BI for this
-ld([v6502_P])                   #21 Transfer bit 0 to C
-anda(~1)                        #22
-st([v6502_P])                   #23
-ld([Y,X])                       #24
-anda(1)                         #25
-ora([v6502_P])                  #26
-st([v6502_P])                   #27
-ld('v6502_ror#38')              #28 Shift table lookup
-st([vTmp])                      #29
-ld([Y,X])                       #30
-anda(~1)                        #31
-ld(hi('shiftTable'),Y)          #32
-jmp(Y,AC)                       #33
-bra(255)                        #34 bra shiftTable+255
+ld([Y,X])                       #21 Transfer bit 0 to C
+xora([v6502_P])                 #22
+anda(1)                         #23
+xora([v6502_P])                 #24
+st([v6502_P])                   #25
+ld('v6502_ror#36')              #26 Shift table lookup
+st([vTmp])                      #27
+ld([Y,X])                       #28
+anda(~1)                        #29
+ld(hi('shiftTable'),Y)          #30
+jmp(Y,AC)                       #31
+bra(255)                        #32 bra shiftTable+255
 label('.recheck17')
 ld(hi('v6502_check'),Y)         #17 Go back to time check before dispatch
 jmp(Y,'v6502_check')            #18
@@ -4632,20 +4635,18 @@ ld(-20/2)                       #19
 label('v6502_lsr')
 assert v6502_Cflag == 1
 ld([v6502_ADH],Y)               #12
-ld([v6502_P])                   #13 Transfer bit 0 to C
-anda(~1)                        #14
-st([v6502_P])                   #15
-ld([Y,X])                       #16
-anda(1)                         #17
-ora([v6502_P])                  #18
-st([v6502_P])                   #19
-ld('v6502_lsr#30')              #20 Shift table lookup
-st([vTmp])                      #21
-ld([Y,X])                       #22
-anda(~1)                        #23
-ld(hi('shiftTable'),Y)          #24
-jmp(Y,AC)                       #25
-bra(255)                        #26 bra shiftTable+255
+ld([Y,X])                       #13 Transfer bit 0 to C
+xora([v6502_P])                 #14
+anda(1)                         #15
+xora([v6502_P])                 #16
+st([v6502_P])                   #17
+ld('v6502_lsr#28')              #18 Shift table lookup
+st([vTmp])                      #19
+ld([Y,X])                       #20
+anda(~1)                        #21
+ld(hi('shiftTable'),Y)          #22
+jmp(Y,AC)                       #23
+bra(255)                        #24 bra shiftTable+255
 
 label('v6502_rol')
 assert v6502_Cflag == 1
@@ -4745,10 +4746,12 @@ nop()                           #19
 # granulariy, and hopefully more throughput for the simpler instructions.
 # (There is no "overhead" for allowing instruction splitting, because
 #  both emulation phases must administer [vTicks] anyway.)
-while pc()&255 < 255:
-  nop()
+
+fillers(until=0xff)
 label('v6502_ENTER')
 bra('v6502_next2')              #0 v6502 primary entry point
+align(0x100, size=0x100)
+
 # --- Page boundary ---
 suba(v6502_adjust)              #1,19 Adjust for vCPU/v6520 timing differences
 
@@ -6483,21 +6486,6 @@ adda(1,Y)                       #24
 ld(-28/2)                       #25
 jmp(Y,'NEXT')                   #26 using NEXT
 ld([vPC+1],Y)                   #27
-
-
-#-----------------------------------------------------------------------
-# Continuation of SYS_ExpanderControl
-# dealing with extended banking codes
-
-if WITH_512K_BOARD:
-  label('sysEx#30')
-  xora([videoModeC])                  #30
-  anda(0xfe)                          #31 Save 7 bits of extended banking
-  xora([videoModeC])                  #32 code into videomodeC.
-  st([videoModeC])                    #33
-  ld(hi('NEXTY'),Y)                   #34
-  jmp(Y,'NEXTY')                      #35
-  ld(-38/2)                           #36
 
 
 
