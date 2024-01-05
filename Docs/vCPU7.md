@@ -165,9 +165,9 @@ a shorter sequence that runs faster.
 | DOKEI  | `35 62 HH LL` | 30  | Store immediate `HHLL` at address `[vAC]..[vAC]+1`
 | DEEKA  | `3d VV`       | 30  | Load word at address `[vAC]..[vAC]+1` into `[VV..VV+1]`<br>(trashes `sysArgs7`)
 | DEEKV  | `41 VV`       | 28  | Load word at address `[VV]..[VV]+1` into `vAC`
-| POKEA  | `39 VV`     | 28  | Store byte `[VV]` at address `[vAC]`
-| POKEQ  | `46 II`     | 22  | Store immediate `II` at address `[vAC]`
-| PEEKA  | `e1 VV`     | 30  | Load byte at address `[vAC]` into `[VV]`
+| POKEA  | `39 VV`     | 22  | Store byte `[VV]` at address `[vAC]`
+| POKEQ  | `46 II`     | 20  | Store immediate `II` at address `[vAC]`
+| PEEKA  | `e1 VV`     | 24  | Load byte at address `[vAC]` into `[VV]`
 | PEEKV  | `dd VV`     | 28  | Load byte at address `[VV]` into `vAC`
 
 **History:** :
