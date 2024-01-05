@@ -437,7 +437,120 @@ would have been very hard to code without the FSM framework.
 They have been selected after profiling the GLCC floating point runtime.
 
 
-### Reset instruction
+
+### Context and interrupts
+
+Two instructions, `VSAVE` and `VRESTORE` respectively save and restore
+the full virtual interpreter context. A third instruction `EXCH` is
+useful to atomically read-modify-write.
+
+
+|  Opcode  | Encoding | Cycles  | Function
+| -------- | -------- | ------- | -------
+| VSAVE    | `35 2b`  | ~104    | save full vCPU context into xxe0-xxff
+| VRESTORE | `35 2d`  | ~126    | restore vCPU context saved in xxe0-xxff
+| EXCH     | `35 2f`  |   30    | atomically exchange bytes vACL and [vT2]
+
+Both `VSAVE` and `VRESTORE` take a page number `xx` in the low byte of
+register `vAC` and use address range `xxe0-xxff` to save or restore
+the context as follows:
+```
+ xx00+0xe0: vAC
+     +0xe2: vPC, vLR, vSP
+     +0xe8: vLAC, vT2, vT3
+     +0xf0: sysArgs[0-7]
+     +0xf8: sysFn
+     +0xfa: vFAS, vFAE, vLAX0
+     +0xfd: vCpuSelect
+     +0xfe: irqFlag   (see below)
+     +0xff: irqMask   (see below)
+```
+
+A virtual interrupt condition occurs whenever byte `frameCount` wraps
+around to zero. The new system variable `vIrqCtx_v7` (0x1f5) controls
+what happens when this is the case.
+
+* When `vIrqCtx_v7` is zero, virtual interrupts are fully backward
+  compatible and work exactly as described in the document
+  [Interrupts.txt](Interrupts.txt). The interrupt handler should then
+  return with the usual LUP sequence, making sure to restore the value
+  of all registers they have used besides vAC and vPC.
+
+* When `vIrqCtx_v7` is nonzero, a virtual interrupt saves the full
+  context at offsets 0xe0-0xff in the page indicated by `vIrqCtx_v7`
+  as if the `VSAVE` instruction had been invoked. Interrupt handlers
+  should then return using the VRESTORE opcode.  However, interrupt
+  are inhibited when byte `irqMask` at offset 0xff in the context page
+  is nonzero. Flag `irqFlag` indicates whether this has happened.
+  
+Byte `irqMask` in the context record is automatically set to a nonzero
+value when the context is saved by an interrupt or by `vSAVE`, and is
+cleared by `VRESTORE`. This feature prevents another virtual interrupt
+to occur before the completion of the interrupt handler. When a
+virtual interrupt is inhibited because `vIrqMask` is nonzero, byte
+`irqFlag` in the context record receives a copy of `irqMask`.
+
+Opcode `VRESTORE` can also atomically adjusts the value of
+`frameCounter` by adding `vACH` and saturating to `0xff` if there is a
+carry. This is useful in the context of an interrupt because one can
+arrange for another interrupt to occur `x` frames after the current
+interrupt by simply setting `vACH` to `-x` before calling `VRESTORE`,
+accounting for the duration of the interrupt handler as well.
+
+Example: the following code causes `0xc0-c1` to count the number
+of elapsed seconds, saving the context in `0x7fe0-7fff`:
+```
+   setup:   LDWI(0x7fff);POKEQ(1);LDWI(0x1f5);POKEQ(0x7f) # mask virq
+            INC(vAC);DOKEI(handler)                       # set handler
+            LDWI(0x7fff);POKEQ(0)                         # unmask virq
+            RET()
+   handler: INCV(0xc0)
+            LDWI(0xc47f);VRESTORE()      # 0xc4 == -60 frames
+```
+
+Note that the old method is still the fastest way to handle
+interrupts.  Although it brings convenience and safety, saving and
+restoring a full context takes more time. However, manually saving a
+partial context after an old-style interrupt can quickly become slower
+than using the new style interrupts. New style interrupts have the
+added benefit to leave the `irqSave` variables (0x30-0x35)
+unchanged. Since these variables are frequently used by programs that
+predate ROMv5a, the new-style interrupts are in fact easier to
+retrofit into an older program.
+
+For instance one can start WozMon (by pressing key `W` in the main menu),
+setup this same interrupt handler, and observe `c0.c1` increase every second.
+This would crash with old-style interrupts because WozMon also uses
+locations 0x30-35 for its own purposes.
+```
+8a0:70 c0 11 7f c4 35 2b         # INCV($c0) LDWI($c47f) VRESTORE()
+ 08A0: xx
+7fff:1                           # set irqMask to mask interrupts
+ 7FFF: xx
+1f5:7f a0 8                      # vIrqCtx_v7 and vIRQ
+ 01F5: 00
+7fff:0                           # unmask interrupts
+ 7FFF: 01
+c0.c1
+ C0: xx xx
+```
+
+Instruction `EXCH` exchanges the low accumulator byte `vACL` with the
+byte located at the address contained in register `vT2`. This is useful
+because it reads and writes a memory byte while making sure that no
+virtual interrupt occurs between the read and the write. For instance
+one can reset `frameCount` without losing a tick as follows:
+```
+   MOVQW('frameCount`, vT2); LDI(0); EXCH()     # read and reset framecount
+   STW(LAC);MOVQW(0,LAC+2)                      # copy old framecount into LAC
+   LDWI('clock');ADDL();STLAC()                 # add it to the long var 'clock'
+```
+Instructions `VSAVE` and `VRESTORE` can also be used to organize
+multiple execution threads. Instruction `EXCH` can then be used for
+thread synchronization.
+
+
+### Reset instruction and system variable changes.
 
 Instruction `RESET` is only used by the reset stub at address `0x1f0`.
 This is a two bytes instruction whose exact encoding is subject to change.
@@ -447,16 +560,32 @@ Its sole purpuse is to make locations `0x1f2-0x1f5` available for other purposes
 | ------ | -------- | -------| -------
 | RESET  | private  | n/a    | Soft reset
 
+This instruction was implemented to shorten the reset sequence at
+address `0x1f0` which used to be six bytes long and is now only two
+bytes long. The locations `0x1f2-0x1f5` can then be used for other
+purposes such as `vIrqCtx_v7` or `ledTempo_v7
 
-**History:** This instruction was implemented to shorten the reset
-sequence at address `0x1f0` which used to be
-`LDI(SYS_Reset_88);STW(sysFn);SYS(88)` (six bytes) and is now only two
-bytes long. This frees locations `0x1f2-0x1f5` which now contain
-values formerly held in nonpublic locations of page zero (`entropy+2`,
-`ledTimer`).  The public variable `ledTempo` has also been displaced
-there under the name `ledTempo_v7` to make space for the displaced
-`vTmp`. Old programs can still safely write into the old `ledTempo`
-location, but anything they write will be overwritten whenever an
-opcode uses the scratch location `vTmp`.  Note that the public
-variable `ledState_v2`, which can in fact be used to stop the led
-sequence, is still in its usual place.
+Variable `ledTempo` has been displaced to a new wlocation
+`ledTempo_v7` at address 0x1f3. The old location is now used by the
+private variable `vTmp` which is used as a scratch variable by the
+implementation of many vCPU instructions. This means that writing
+anything into the old `ledTempo` location is harmless but will be
+quickly overwritten by vCPU opcoded whose implementation uses `vTmp`.
+
+Some private system variables have also been changed to make space for
+two critical variables used by dev128k7.rom to separate the memory
+bank used for video output and the memory bank seen by the vCPU. The
+third byte of the entropy counter has been moved to address 0x1f2 and
+the led timer has been moved to address 0x1f4. Their former locations
+are now used to cache the control bits that should be used during
+video generation and during vcpu execution. Although overwriting these
+variables can crash the Gigatron, short of a bug, legacy programs are
+unlikely to write to these locations because anything written there
+used to be quickly overwritten by the gigatron firmware.
+
+Except for `ledTempo` discussed above, all other public system
+variables documented in `interface.json` remain at the same location
+and perform the same task. For instance, the recommended way to
+control the LEDs is to stop the sequencer by setting `ledState_v2` to
+a positive value (e.g. 1) and writing the desired led state into the
+low four bits of variable `xoutMask` (see program `BASIC/LEDS.gtb`).
