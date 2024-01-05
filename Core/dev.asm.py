@@ -444,9 +444,9 @@ videoTable      = 0x0100 # Indirection table: Y[0] dX[0]  ..., Y[119] dX[119]
 
 vReset          = 0x01f0
 entropy2        = 0x01f2 # (displaced) Entropy hidden state
-reserved3       = 0x01f3
+ledTempo        = 0x01f3 # (displaced) Led timer reset value
 ledTimer        = 0x01f4 # (displaced) Ticks until next LED change
-ledTempo        = 0x01f5 # (displaced) Led timer reset value
+reserved5       = 0x01f5
 vIRQ_v5         = 0x01f6
 ctrlBits        = 0x01f8
 videoTop_v5     = 0x01f9 # Number of skip lines
@@ -3054,6 +3054,17 @@ ld([sysArgs+4],X)               #17
 #       LUP  $xx  ==> vRTI
 fillers(until=251-16)
 
+# vRTI immediate resume
+label('vRTI#32')
+ld([vCpuSelect],Y)              #32
+ld(-36//2)                      #33
+jmp(Y,'ENTER')                  #34
+adda([vTicks])                  #35-36=-1
+
+# Immediate resume is possible when there is enough time for
+# finishing vrti and executing the next instruction (possibly v6502)
+vRtiNeeds=36//2+maxTicks+v6502_adjust
+
 label('vRTI#22')
 ld([vIrqSave+2])                #22
 st([vAC])                       #23
@@ -3062,19 +3073,14 @@ st([vAC+1])                     #25
 ld([vIrqSave+4])                #26
 st([vCpuSelect])                #27
 ld([vTicks])                    #28 enough time for immediate resume?
-adda(-36//2-v6502_adjust)       #29
+adda(maxTicks-vRtiNeeds)        #29
 bge('vRTI#32')                  #30
 ld(hi('RESYNC'),Y)              #31
 jmp(Y,'RESYNC')                 #32
-adda(+36//2+v6502_adjust+       #33
-     maxTicks-30//2)            #33-30=3 (needs maxTicks>=15)
+adda(vRtiNeeds-30//2)           #34-30=3
 
-# vRTI immediate resume
-label('vRTI#32')
-ld([vCpuSelect],Y)              #32
-ld(-36/2)                       #33
-jmp(Y,'ENTER')                  #34
-adda([vTicks])                  #35-36=-1
+# Resync cycle adjustment must be positive
+assert (maxTicks-vRtiNeeds)+(vRtiNeeds-30//2) >= 0
 
 # vRTI entry point
 assert(pc()&255 == 251)         # The landing offset 251 for LUP trampoline is fixed
