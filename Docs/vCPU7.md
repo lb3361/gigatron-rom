@@ -182,8 +182,8 @@ Two additional instructions provide indexed access.
 
 | Opcode |    Encoding    | Cycles | Function
 | ------ | -------------- | -------| -------
-| LDXW   | `6a VV LL HH`  | 28+30  | Load word at address `[VV]+$HHLL` into `vAC`<br>(trashes `sysArgs[567]`)
-| STXW   | `6c VV LL HH`  | 28+30  | Store `vAC` into word at address `[VV]+$HHLL`<br>(trashes `sysArgs[567]`)
+| LDXW   | `6a VV LL HH`  | 28+30  | Load word at address `[VV]+$HHLL` into `vAC`<br>(trashes `sysArgs[5-7]`)
+| STXW   | `6c VV LL HH`  | 28+30  | Store `vAC` into word at address `[VV]+$HHLL`<br>(trashes `sysArgs[5-7]`)
 
 **History:** :
 This draws on an earlier experience with indexed memory accesses
@@ -265,10 +265,10 @@ working variables.
 
 | Opcode |  Encoding  | Cycles     | Function
 | ------ | ---------- | -----------| -------
-| MULW   | `35 3d VV` | ~= 500     | Multiply accumulator `vAC` by word `[VV..VV+1]`
-| MULQ   | `7d KK`    | 44 to 152  | Multiply accumulator `vAC` by small immediate
-| RDIVU  | `35 3b VV` | ~= 1100    | Unsigned division of word `[VV..VV+1]` by `vAC`
-| RDIVS  | `35 39 VV` | ~= 1200    | Signed division of word `[VV..VV+1]` by `vAC`
+| MULW   | `35 3d VV` | ~= 500     | Multiply accumulator `vAC` by word `[VV..VV+1]`<br>(trashes `sysArgs[0-7]`)
+| MULQ   | `7d KK`    | 44 to 152  | Multiply accumulator `vAC` by small immediate<br>(trashes `sysArgs[0-7]`)
+| RDIVU  | `35 3b VV` | ~= 1100    | Unsigned division of word `[VV..VV+1]` by `vAC`<br>(trashes `sysArgs[0-7]`)
+| RDIVS  | `35 39 VV` | ~= 1200    | Signed division of word `[VV..VV+1]` by `vAC`<br>(trashes `sysArgs[0-7]`)
 
 The multiplication opcodes `MULW` and `MULQ` leave the low
 sixteen bits of the product in `vAC`.
@@ -320,8 +320,8 @@ copy up to five bytes to or from `sysArgs0` (only!).
 
 | Opcode |  Encoding  | Cycles     | Function
 | ------ | ---------- | -----------| -------
-| COPY   | `35 cb`    |  (notes)   | Copy `vACL` bytes from `[vT3]..` to `[vT2]..`.
-| COPYN  | `35 cf NN` |  (notes)   | Copy NN bytes from `[vT3]..` to `[vT2]..`.
+| COPY   | `35 cb`    |  (notes)   | Copy `vACL` bytes from `[vT3]..` to `[vT2]..`.<br>(trashes `sysArgs[0-7]`)
+| COPYN  | `35 cf NN` |  (notes)   | Copy NN bytes from `[vT3]..` to `[vT2]..`.<br>(trashes `sysArgs[0-7]`)
 
 Like most long vCPU7.md instructions, the memory copy instructions
 rely on the FSM mechanism (https://forum.gigatron.io/viewtopic.php?t=403)
@@ -368,9 +368,9 @@ conditional jump opcodes.
 | ------ | ---------- | ----------- | -------
 | LDLAC  | `35 1e`    | 38          | Load long `[vAC]..[vAC+3]` into long accumulator `vLAC`
 | STLAC  | `35 20`    | 38          | Store `vLAC` into `[vAC]..[vAC+3]` into long accumulator `vLAC`
-| MOVL   | `35 db YY XX` | 30+30    | Copy long from `[XX..XX+3]` to `[YY..YY+3]`<br>(trashes `sysArgs[0123567]`)
-| ADDL   | `35 00`    | 22+30+28    | Add long `[vAC]..[vAC+3]` to long accumulator `vLAC`<br>(trashes `sysArgs[567]`)
-| SUBL   | `35 04`    | 22+28+28    | Subtract long `[vAC]..[vAC+3]` from long accumulator `vLAC`<br>(trashes `sysArgs[567]`)
+| MOVL   | `35 db YY XX` | 30+30    | Copy long from `[XX..XX+3]` to `[YY..YY+3]`<br>(trashes `sysArgs[0-7]`)
+| ADDL   | `35 00`    | 22+30+28    | Add long `[vAC]..[vAC+3]` to long accumulator `vLAC`<br>(trashes `sysArgs[5-7]`)
+| SUBL   | `35 04`    | 22+28+28    | Subtract long `[vAC]..[vAC+3]` from long accumulator `vLAC`<br>(trashes `sysArgs[5-7]`)
 | ANDL   | `35 06`    | 22+28       | Bitwise and of `[vAC]..[vAC+3]` with long accumulator `vLAC`<br>(trashes `sysArgs7`)
 | ORL    | `35 08`    | 22+28       | Bitwise or of `[vAC]..[vAC+3]` with long accumulator `vLAC`<br>(trashes `sysArgs7`)
 | XORL   | `35 0a`    | 22+28       | Bitwise xor of `[vAC]..[vAC+3]` with long accumulator `vLAC`<br>(trashes `sysArgs7`)
@@ -408,8 +408,8 @@ point accumulator composed of registers `vFAS` for the sign,
 | Opcode | Encoding      | Cycles     | Function
 | ------ | ----------    | ---------- | -------
 | MOVF   | `35 dd YY XX` | 30+38      | Copy fp number from `[XX..XX+4]` to `[YY..YY+4]`<br>(trashes `sysArgs[0..7]`)
-| LDFAC  | `35 27`       | typ 72     | Load fp number `[vAC]..[vAC]+4` into float accumulator<br>(trashes `vAC` `vT3` `sysArgs[567]`)
-| STFAC  | `35 25`       | typ 66     | Store float accumulator into fp var `[vAC]..[vAC]+4`<br>(trashes `vAC` `sysArgs[567]`)
+| LDFAC  | `35 27`       | typ 72     | Load fp number `[vAC]..[vAC]+4` into float accumulator<br>(trashes `vAC` `vT3` `sysArgs[5-7]`)
+| STFAC  | `35 25`       | typ 66     | Store float accumulator into fp var `[vAC]..[vAC]+4`<br>(trashes `vAC` `sysArgs[5-7]`)
 
 Three shift instructions operate on the 40 bits extended accumulator `vLAX`.
 
