@@ -194,11 +194,11 @@ WITH_SPI_BITS = defined('WITH_SPI_BITS', 2)
 # in case it differs from the source file stem
 ROMNAME = defined('ROMNAME', argv[0])
 if ROMNAME.endswith('.rom'):
-    ROMNAME, _ = splitext(ROMNAME)
+  ROMNAME, _ = splitext(ROMNAME)
 if ROMNAME.endswith('.py'):
-    ROMNAME, _ = splitext(ROMNAME)
+  ROMNAME, _ = splitext(ROMNAME)
 if ROMNAME.endswith('.asm'):
-    ROMNAME, _ = splitext(ROMNAME)
+  ROMNAME, _ = splitext(ROMNAME)
 
 # Displayed rom name --
 # This is the name displayed by Reset.gcl.
@@ -442,14 +442,14 @@ userVars2_v7    = zpByte(0)
 # Byte 0-239 define the video lines
 videoTable      = 0x0100 # Indirection table: Y[0] dX[0]  ..., Y[119] dX[119]
 
-vReset          = 0x01f0
+vReset          = 0x01f0 # Reset stub
 entropy2        = 0x01f2 # (displaced) Entropy hidden state
 ledTempo        = 0x01f3 # (displaced) Led timer reset value
 ledTimer        = 0x01f4 # (displaced) Ticks until next LED change
-reserved5       = 0x01f5
-vIRQ_v5         = 0x01f6
-ctrlBits        = 0x01f8
-videoTop_v5     = 0x01f9 # Number of skip lines
+vIrqCtx_v7      = 0x01f5 # context page for irq
+vIRQ_v5         = 0x01f6 # vIRQ vector
+ctrlBits        = 0x01f8 # Expansion control bits
+videoTop_v5     = 0x01f9 # Number of skipped lines
 
 # Highest bytes are for sound channel variables
 wavA = 250      # Waveform modulation with `adda'
@@ -482,6 +482,19 @@ v6502_overhead = 11             # Callee overhead for v6502 (cycles)
 v6502_adjust = (v6502_maxTicks - maxTicks) + (v6502_overhead - vCPU_overhead)//2
 assert v6502_adjust >= 0        # v6502's overhead is a bit more than vCPU
 
+
+def runVcpu_ticks(n, overhead, ref=None):
+  overhead += vCPU_overhead
+  n -= overhead
+  assert n > 0
+  m = n % 2                     # Need alignment?
+  n //= 2
+  n -= maxTicks                 # First instruction always runs
+  assert n < 128
+  assert n >= v6502_adjust
+  print('runVcpu at $%04x net cycles %3s info %s' % (pc(), (n + maxTicks) * 2, ref))
+  return n, m
+
 def runVcpu(n, ref=None, returnTo=None):
   """Macro to run interpreter for exactly n cycles. Returns 0 in AC.
 
@@ -494,7 +507,7 @@ def runVcpu(n, ref=None, returnTo=None):
   - If another interpreter than vCPU is active (v6502...), that one
     must adjust for the timing differences, because runVcpu wouldn't know."""
 
-  overhead = runVcpu_overhead + vCPU_overhead
+  overhead = runVcpu_overhead
   if returnTo == 0x100:         # Special case for videoZ
     overhead -= 2
 
@@ -502,21 +515,13 @@ def runVcpu(n, ref=None, returnTo=None):
     # (Clumsily) create a maximum time slice, corresponding to a vTicks
     # value of 127 (giving 282 cycles). A higher value doesn't work because
     # then SYS functions that just need 28 cycles (0 excess) won't start.
-    n = (127 + maxTicks) * 2 + overhead
+    n = (127 + maxTicks) * 2 + overhead + vCPU_overhead
 
-  n -= overhead
-  assert n > 0
-  m = n % 2                     # Need alignment?
-  n //= 2
-  n -= maxTicks                 # First instruction always runs
-  assert n < 128
-  assert n >= v6502_adjust
-
-  print('runVcpu at $%04x net cycles %3s info %s' % (pc(), (n + maxTicks) * 2, ref))
+  n, m = runVcpu_ticks(n, overhead, ref)
 
   ld([vCpuSelect],Y)            #0 Allows us to use ctrl() just before runVcpu
-  if m == 1:                    # Tick alignment
-      st(0,[0])                 #1 Reinitialize zero for extra robustness
+  if m == 1:
+      st(0,[0])                 # Tick alignment
   if returnTo != 0x100:
     if returnTo is None:
       returnTo = pc() + 4       # Next instruction
@@ -525,6 +530,7 @@ def runVcpu(n, ref=None, returnTo=None):
   jmp(Y,'ENTER')                #3
   ld(n)                         #4
 assert runVcpu_overhead ==       5
+
 
 #-----------------------------------------------------------------------
 #       v6502 definitions
@@ -602,11 +608,6 @@ ctrl(0b01111100)                # Disable SPI slaves, enable RAM, bank 1
 #      |`-------- B0
 #      `--------- B1
 # bit15 --------- MOSI = 0
-
-if WITH_128K_BOARD:
-  ld(0x7c)                      # Initialize ctrlBits aliases
-  st([ctrlVideo])               # - for video access
-  st([ctrlCopy])                # - for vcou access
 
 # Simple RAM test and size check by writing to [1<<n] and see if [0] changes or not.
 ld(1)                           # Quick RAM test and count
@@ -686,37 +687,35 @@ ld(syncBits^hSync,OUT)
 ld(syncBits,OUT)
 
 # vCPU reset handler
-ld((vReset&255)-2)              # Setup vCPU reset handler
+ld(hi('ENTER'))                 # vCPU is the active interpreter
+st([vCpuSelect])
+ld((vReset&255)-2)              # Setup reset handler
 st([vPC])
 adda(2,X)
 ld(vReset>>8)
 st([vPC+1],Y)
 st(lo('PREFIX35'),    [Y,Xpp])  # vReset
 st(lo('RESET_v7'),    [Y,Xpp])
-ld(vIRQ_v5 & 0xff, X)
-st(0,                 [Y,Xpp])  # vIRQ_v5: Disable interrupts
-st(0,                 [Y,Xpp])  # vIRQ_v5
-st(0b01111100,        [Y,Xpp])  # Control register
-st(0,                 [Y,Xpp])  # videoTop
 
-ld(hi('ENTER'))                 # Active interpreter (vCPU,v6502) = vCPU
-st([vCpuSelect])
-
+# Init key variables (Y=1)
+ld(0)
+st([0])                         # Carry lookup ([0x80] in 1st line of vBlank)
+st([channel])
+st([soundTimer])
+st([Y, vIrqCtx_v7])
+st([Y, vIRQ_v5])
+st([Y, vIRQ_v5+1])
+st([Y, videoTop_v5])
 ld(255)                         # Setup serial input
 st([frameCount])
 st([serialRaw])
 st([serialLast])
 st([buttonState])
 st([resetTimer])                # resetTimer<0 when entering Main.gcl
-
-ld(0b0111)                      # LEDs |***O|
-ld(syncBits^hSync,OUT)
-ld(syncBits,OUT)
-
-ld(0)
-st([0])                         # Carry lookup ([0x80] in 1st line of vBlank)
-st([channel])
-st([soundTimer])
+ld(0x7c)
+st([Y, ctrlBits])
+st([ctrlVideo]) if WITH_128K_BOARD else nop()
+st([ctrlCopy])  if WITH_128K_BOARD else nop()
 
 ld(0b1111)                      # LEDs |****|
 ld(syncBits^hSync,OUT)
@@ -724,6 +723,7 @@ ld(syncBits,OUT)
 st([xout])                      # Setup for control by video loop
 st([xoutMask])
 
+# Start
 ld(hi('startVideo'),Y)          # Enter video loop at vertical blank
 jmp(Y,'startVideo')
 st([ledState_v2])               # Setting to 1..126 means "stopped"
@@ -750,38 +750,32 @@ st([vSP])                       #21 vSP
 st([vSP+1])                     #22
 ld(hi('videoTop_v5'),Y)         #23
 st([Y,lo('videoTop_v5')])       #24 Show all 120 pixel lines
-st([Y,vIRQ_v5])                 #25 Disable vIRQ dispatch
-st([Y,vIRQ_v5+1])               #26
-st([soundTimer])                #27 soundTimer
-st([vLR])                       #28 vLR
-st([vLR+1])                     #29
-# set videoMode
-if WITH_512K_BOARD:
-  st([videoModeC])              #30
-  ld('nopixels')                #31
-else:
-  ld('nopixels')                #30
-  st([videoModeC])              #31
-st([videoModeB])                #32
-st([videoModeD])                #33
+st([Y,vIrqCtx_v7])              #25
+st([Y,vIRQ_v5])                 #26 Disable vIRQ dispatch
+st([Y,vIRQ_v5+1])               #27
+st([soundTimer])                #28 soundTimer
+st([vLR])                       #29 vLR
+st([vLR+1])                     #30
+st([videoModeC]) if WITH_512K_BOARD else None
+ld(0x7c)                        #31/32
+st([Y,ctrlBits])                #32/33
+st([ctrlVideo])  if WITH_128K_BOARD else nop()
+st([ctrlCopy])   if WITH_128K_BOARD else nop()
+ld('nopixels')                  #35/36
+st([videoModeC]) if not WITH_512K_BOARD else None
+st([videoModeB])                #37
+st([videoModeD])                #38
 # Set romTypeValue
 assert (romTypeValue & 7) == 0
-ld(romTypeValue)                #34 Set ROM type/version and clear channel mask
-st([romType])                   #35
+ld(romTypeValue)                #39 Set ROM type/version and clear channel mask
+st([romType])                   #40
 # Reset expansion board
-ctrl(0b01111111)                #36 Reset signal (default state | 0x3)
-ctrl(0b01111100)                #37 Default state.
+ctrl(0b01111111)                #41 Reset signal (default state | 0x3)
+ctrl(0b01111100)                #42 Default state.
 # Adjust ticks
-ld([vTicks])                    #38 Always load after ctrl
-adda(-32/2)                     #39-32=7
-st([vTicks])                    #8
-if WITH_128K_BOARD:
-  ld(0x7c)                      #9
-  st([ctrlVideo])               #10
-  st([ctrlCopy])                #11
-else:
-  wait(12-9)                    #9
-# Exec Reset.gt1
+ld([vTicks])                    #43 Always load after ctrl
+adda(-34/2)                     #44-34=10
+st([vTicks])                    #11
 ld('Reset')                     #12 Reset.gt1 from EPROM
 st([sysArgs+0])                 #13
 ld(hi('Reset'))                 #14
@@ -1301,25 +1295,26 @@ if WITH_128K_BOARD:
   # at the cost of 7 extra cycles.
   ld([Y,ctrlBits])              #+1
   st([ctrlCopy],X)              #+2
-  xora([ctrlVideo])             #+3
-  anda(0x3c)                    #+4
-  xora([ctrlVideo])             #+5
-  st([ctrlVideo])               #+6
-  ctrl(X)                       #+7 next must be a load
+  ctrl(X)                       #+3
+  xora([ctrlVideo])             #+4 load after ctrl!
+  anda(0x3c)                    #+5
+  xora([ctrlVideo])             #+6
+  st([ctrlVideo])               #+7
   extra += 7
 
 # vCPU interrupt
 ld([frameCount])                #69
 beq('vBlankFirst#72')           #70
-
 runVcpu(190-71-extra,           #71 Application cycles (scan line 0)
     '---D line 0 no timeout',
     returnTo='vBlankFirst#190')
 
 label('vBlankFirst#72')
-ld(hi('vBlankFirst#75'),Y)      #72
-jmp(Y,'vBlankFirst#75')         #73
-ld(hi(vIRQ_v5),Y)               #74
+ld(lo('vBlankFirst#190'))       #72 Set vCPU return
+st([vReturn])                   #73
+ld(hi('vBlankFirst#77'),Y)      #74 Jump for more space
+jmp(Y,'vBlankFirst#77')         #75
+ld(hi(vIRQ_v5),Y)               #76
 
 label('vBlankFirst#190')
 
@@ -1397,13 +1392,13 @@ label('.prepsync#40')
 st([videoSync1])                #40
 st(0,[0])                       #41 Reinitialize carry lookup, for robustness
 
-# 
+#
 videoYInput = 1-2*(vBack-1-1)   # videoY when the 74HC595 has all 8 controller bits
 ld([videoY])                    #42
 xora(videoYInput)               #43 Check for serial input capture
 beq('vbInput#46')               #44
 xora(videoYInput)               #45
-anda(6)                         #46 Check for sound sample 
+anda(6)                         #46 Check for sound sample
 beq('vbSample#49')              #47
 if not WITH_512K_BOARD:
     ld([sample])                #48
@@ -1777,7 +1772,7 @@ if WITH_512K_BOARD:
   label('.videoF#38')
   runVcpu(200-38,
           'F--- line 40-520',
-          returnTo=0x1ff )        #38 
+          returnTo=0x1ff )        #38
 
   fillers(until=0xfc);
   label('pixels')
@@ -3077,7 +3072,7 @@ adda(maxTicks-vRtiNeeds)        #29
 bge('vRTI#32')                  #30
 ld(hi('RESYNC'),Y)              #31
 jmp(Y,'RESYNC')                 #32
-adda(vRtiNeeds-30//2)           #34-30=3
+adda(vRtiNeeds-30//2)           #33-30=3
 
 # Resync cycle adjustment must be positive
 assert (maxTicks-vRtiNeeds)+(vRtiNeeds-30//2) >= 0
@@ -5924,45 +5919,66 @@ align(0x100, size=0x100)
 #       Extended vertical blank logic: interrupts
 #-----------------------------------------------------------------------
 
-# Check if an IRQ handler is defined
-label('vBlankFirst#75')
-ld([Y,vIRQ_v5])                 #75
-ora([Y,vIRQ_v5+1])              #76
-bne('vBlankFirst#79')           #77
-ld([vPC])                       #78
-runVcpu(190-79-extra,           #79 Application cycles (scan line 0)
-    '---D line 0 timeout but no irq',
-    returnTo='vBlankFirst#190')
+# Manual runVcpu with vReturn already set
+label('vBlankFirst#vCPU1')      # with halfTick
+st(0,[0])
+label('vBlankFirst#vCPU0')      # witout halfTick
+ld([vCpuSelect],Y)
+jmp(Y,'ENTER')
+nop()
 
-label('vBlankFirst#79')
-st([vIrqSave+0])                #79 Save vPC
-ld([vPC+1])                     #80
-st([vIrqSave+1])                #81
-ld([vAC])                       #82 Save vAC
-st([vIrqSave+2])                #83
-ld([vAC+1])                     #84
-st([vIrqSave+3])                #85
-ld([Y,vIRQ_v5])                 #86 Set vPC to vIRQ
-suba(2)                         #87
-st([vPC])                       #88
-ld([Y,vIRQ_v5+1])               #89
-st([vPC+1])                     #90
+# IRQ logic
+label('vBlankFirst#77')
+ld([Y,vIRQ_v5])                 #77 check if there is a irq handler
+ora([Y,vIRQ_v5+1])              #78
+n,m = runVcpu_ticks(190-79-extra, 5, '---D line 0 timeout no irq')
+beq('vBlankFirst#vCPU%d' % m)   #79
+ld(n)                           #80
+
+ld([Y, vIrqCtx_v7])             #81 check if ctx-style irq
+bne('vBlankFirst#84')           #82
+ld([vPC])                       #83
+st([vIrqSave+0])                #84 Save vPC
+ld([vPC+1])                     #85
+st([vIrqSave+1])                #86
+ld([vAC])                       #87 Save vAC
+st([vIrqSave+2])                #88
+ld([vAC+1])                     #89
+st([vIrqSave+3])                #90
 ld([vCpuSelect])                #91 Save vCpuSelect
 st([vIrqSave+4])                #92
-ld(hi('ENTER'))                 #93 Set vCpuSelect to ENTER (=regular vCPU)
-st([vCpuSelect])                #94
-runVcpu(190-95-extra,           #95 Application cycles (scan line 0)
-    '---D line 0 timeout with irq',
-    returnTo='vBlankFirst#190')
+ld([Y,vIRQ_v5])                 #93 Set vPC to vIRQ
+suba(2)                         #94
+st([vPC])                       #95
+ld([Y,vIRQ_v5+1])               #96
+st([vPC+1])                     #97
+ld(hi('ENTER'))                 #98 Set vCpuSelect to ENTER (=regular vCPU)
+st([vCpuSelect])                #99
+n,m = runVcpu_ticks(190-100-extra, 5, '---D line 0 timeout std irq')
+bra('vBlankFirst#vCPU%d' % m)   #100
+ld(n)                           #101
 
+label('vBlankFirst#84')
+ld([Y, vIrqCtx_v7])             #84
+ld(AC,Y)                        #85 
+ld([Y,0xff])                    #86 irqMask
+beq('vBlankFirst#89')           #87
+st([Y,0xfe])                    #88 irqFlag
+n,m = runVcpu_ticks(190-89-extra, 5, '---D line 0 timeout masked irq')
+bra('vBlankFirst#vCPU%d' % m)   #89 
+ld(n)
 
-
-# Entered last line of vertical blank (line 40)
-label('vBlankLast#34')
+label('vBlankFirst#89')
+ld(hi('vIRQ#92'),Y)             #89 ctx irq
+jmp(Y,'vIRQ#92')                #90
+ld(hi(vIrqCtx_v7),Y)            #91
 
 #-----------------------------------------------------------------------
 #       Extended vertical blank logic: game controller decoding
 #-----------------------------------------------------------------------
+
+# Entered last line of vertical blank (line 40)
+label('vBlankLast#34')
 
 # Game controller types
 # TypeA: Based on 74LS165 shift register (not supported)
@@ -6134,6 +6150,10 @@ st([vPC])                       #39
 ld(hi('NEXTY'),Y)               #40
 jmp(Y,'NEXTY')                  #41
 ld(-44/2)                       #42
+
+
+#----------------------------------------
+# SYS_ScanMemory{Ext}
 
 # SYS_ScanMemory_DEVROM_50 implementation
 label('sys_ScanMemory')
@@ -6354,7 +6374,7 @@ ld(hi('REENTER'),Y)                  #21
 jmp(Y,'REENTER')                     #22
 ld(-26/2)                            #23
 
-#-----------------------------------------------------------------------
+#----------------------------------------
 # SYS_CopyMemoryExt_v6_100 implementation
 
 label('sys_CopyMemoryExt')
@@ -6463,31 +6483,36 @@ jmp(Y,'REENTER')                     #34
 ld(-38/2)                            #35 max: 38 + 52 = 90 cycles
 
 
-#-----------------------------------------------------------------------
-# LUP implementation
+#----------------------------------------
+# SYS_Mutiply / SYS_Divide fsm entry
 
-# LUP on dev7rom runs 4 cycles behind earlier ROMS.
-# Clearing [vAC+1] is now achieved before branching
-# into the rom page instead of in the return suffix.
-# This permits sys_Exec to consult the ROM tables
-# without losing the contents of [vAC+1] and with
-# enough time to increment the lup pointer.
-label('lup#13')
-ld([vAC+1],Y)                   #13
-ld(vAC+1,X)                     #14
-jmp(Y,251)                      #15
-st(0,[X])                       #16 clear [vAC+1]
+# sys_Multiply_s16 (page 0x14)
+label('sys_Multiply_s16')
+ld('sysm#3a')                   #18
+st([fsmState])                  #19
+ld(1)                           #20
+st([sysArgs+6])                 #21
+ld(hi('FSM14_ENTER'))           #22 jump into multiply fsm
+st([vCpuSelect])                #23
+nop()                           #24
+adda(1,Y)                       #25
+jmp(Y,'NEXT')                   #26
+ld(-28/2)                       #27
 
-# The LUP return stub name 'lupReturn#19' is hardcoded in the
-# trampoline code which cannot be changed because asm.py must
-# remain able to compile older roms.
-label('lupReturn#19')           # name hardcoded in the trampoline code
-label('lupReturn#23')           # same name with the proper timing suffix
-ld([vCpuSelect])                #23 to current interpreter
-adda(1,Y)                       #24
-ld(-28/2)                       #25
-jmp(Y,'NEXT')                   #26 using NEXT
-ld([vPC+1],Y)                   #27
+# sys_Divide_u16 (page 0x14)
+label('sys_Divide_u16')
+ld('sysd#3a')                   #18
+st([fsmState])                  #19
+ld(0)                           #20 init
+st([sysArgs+4])                 #21
+st([sysArgs+5])                 #22
+ld(15*8)                        #23
+st([sysArgs+6])                 #24
+ld(hi('FSM14_ENTER'))           #25 jump into divide fsm
+st([vCpuSelect])                #26
+adda(1,Y)                       #27
+jmp(Y, 'NEXT')                  #28
+ld(-30/2)                       #29
 
 
 
@@ -6918,7 +6943,7 @@ jmp(Y,'fsmCHANMASK#8')          #6
 st([fsmState])                  #7
 
 # Usage: fsmAsm('SRIN')
-# - get one serial byte 
+# - get one serial byte
 # - wait until videoY==sysArgs6 and save IN into vAC
 # - increment sysArgs6 to the next payload scanline
 label(fsmLab('SRIN'))
@@ -7640,6 +7665,27 @@ ld('ldfac#3a')                  #15
 oplabel('LDFARG_v7')
 bra('fsm1aop0#16')              #14
 ld('ldfarg#3a')                 #15
+
+# Instruction VSAVE (35 2b) 30+74 cycles
+# * Save vCPU context at addresses XXe0-XXff where XX is vAC.
+oplabel('VSAVE_v7')
+ld(hi('vsave#17'),Y)            #14
+jmp(Y,'vsave#17')               #15
+
+# Instruction VRESTORE (35 2d)  28+58+30 cycles
+# * Restore vCPU context saved at addresses XXe0-XXff where XX is vAC
+#   branching to the saved pc. Also set frameCount:=frameCount|vACH.
+oplabel('VRESTORE_v7')
+ld(hi('vrestore#17'),Y)         #14
+jmp(Y,'vrestore#17')            #15
+
+# Instruction EXCH (35 2f) 30 cycles
+# * Exchanges vACL with the byte at address [vT2].
+#   Useful for atomic updates such as
+#      MOVQW('frameCount',vT2); LDI(0); EXCH()
+oplabel('EXCH_v7')
+ld(hi('exch#17'),Y)             #14
+jmp(Y,'exch#17')                #15
 
 # Free instruction slots
 
@@ -9560,7 +9606,7 @@ nop()                           #-1
 anda([Y,X])                     #0
 anda(0x80,X)                    #1
 ld([X])                         #2 b0
-ld([sysArgs+5],X)               #3 
+ld([sysArgs+5],X)               #3
 adda([Y,X])                     #4
 st([vTmp])                      #5
 adda([vLAC])                    #6
@@ -10117,7 +10163,7 @@ ld(-40/2)                       #38
 
 label('stfac#3a')
 ld([vAC+1],Y)                   #3,21
-ld([vFAE])                      #4 
+ld([vFAE])                      #4
 bne('stfac#7b')                 #5
 ld([vAC],X)                     #6
 st([vLAX])                      #7  zero!
@@ -10515,10 +10561,37 @@ ld(-26/2)                       #24
 
 align(0x100, size=0x100)
 
-#----------------------------------------
-# sys_Exec, sys_Multiply, sys_Divide
 
-# sys_Exec (page 0x16)
+#----------------------------------------
+# LUP implementation
+
+# LUP on dev7rom runs 4 cycles behind earlier ROMS.
+# Clearing [vAC+1] is now achieved before branching
+# into the rom page instead of in the return suffix.
+# This permits sys_Exec to consult the ROM tables
+# without losing the contents of [vAC+1] and with
+# enough time to increment the lup pointer.
+label('lup#13')
+ld([vAC+1],Y)                   #13
+ld(vAC+1,X)                     #14
+jmp(Y,251)                      #15
+st(0,[X])                       #16 clear [vAC+1]
+
+# The LUP return stub name 'lupReturn#19' is hardcoded in the
+# trampoline code which cannot be changed because asm.py must
+# remain able to compile older roms.
+label('lupReturn#19')           # name hardcoded in the trampoline code
+label('lupReturn#23')           # same name with the proper timing suffix
+ld([vCpuSelect])                #23 to current interpreter
+adda(1,Y)                       #24
+ld(-28/2)                       #25
+jmp(Y,'NEXT')                   #26 using NEXT
+ld([vPC+1],Y)                   #27
+
+
+#----------------------------------------
+# SYS_Exec fsm entry
+
 label('sys_Exec')
 ld('se:exec')                   #18
 st([fsmState])                  #19
@@ -10527,43 +10600,14 @@ st([sysFn])                     #21
 ld(0)                           #22
 st([sysFn+1])                   #23
 nop()                           #24
-ld(hi('FSM16_ENTER'))           #25
+ld(hi('FSM16_ENTER'))           #25 jumps into exec fsm
 st([vCpuSelect])                #26
 adda(1,Y)                       #27
 jmp(Y,'NEXT')                   #28
 ld(-30/2)                       #29
 
-# sys_Multiply_s16 (page 0x14)
-label('sys_Multiply_s16')
-ld('sysm#3a')                   #18
-st([fsmState])                  #19
-ld(1)                           #20
-st([sysArgs+6])                 #21
-ld(hi('FSM14_ENTER'))           #22
-st([vCpuSelect])                #23
-nop()                           #24
-adda(1,Y)                       #25
-jmp(Y,'NEXT')                   #26
-ld(-28/2)                       #27
-
-# sys_Divide_u16 (page 0x14)
-label('sys_Divide_u16')
-ld('sysd#3a')                   #18
-st([fsmState])                  #19
-ld(0)                           #20 init
-st([sysArgs+4])                 #21
-st([sysArgs+5])                 #22
-ld(15*8)                        #23
-st([sysArgs+6])                 #24
-ld(hi('FSM14_ENTER'))           #25
-st([vCpuSelect])                #26
-adda(1,Y)                       #27
-jmp(Y, 'NEXT')                  #28
-ld(-30/2)                       #29
-
-
 #----------------------------------------
-# SYS_Unpack
+# SYS_Unpack implementation
 
 # This has been displaced to make space in page 6
 # for native code fragments that use the shift table.
@@ -10763,13 +10807,208 @@ ld('stxw#3a')                   #16
 
 #-----------------------------------------------------------------------
 #
-#   $2100 ROM page 33: reserved
+#   $2100 ROM page 33: VIRQ VSAVE VRESTORE
 #
 #-----------------------------------------------------------------------
 
-align(0x100, size = 0x100)
+fillers(until=0xff)
+label('FSM21_ENTER')
+bra(pc()+4)                     #0
+align(0x100, size=0x100)
+bra([fsmState])                 #1
+assert (pc() & 255) == (symbol('NEXT') & 255)
+label('FSM21_NEXT')
+adda([vTicks])                  #0
+bge([fsmState],warn=False)      #1
+st([vTicks])                    #2
+adda(maxTicks)                  #3
+bgt(pc()&255)                   #4
+suba(1)                         #5
+ld(hi('vBlankStart'),Y)         #6
+jmp(Y,[vReturn])                #7
+ld([channel])                   #8
 
-nop()
+
+# ---------------------------------------
+# Context structure
+#
+# page+0xe0: vAC
+#     +0xe2: vPC, vLR, vSP
+#     +0xe8: vLAC, vT2, vT3
+#     +0xf0: sysArgs[0-7]
+#     +0xf8: sysFn
+#     +0xfa: vFAS, vFAE, vLAX0
+#     +0xfd: vCpuSelect
+#     +0xfe: irqFlag
+#     +0xff: irqMask
+
+def vSave(off,*vars):
+    for v in vars:
+        ld([v])
+        st([Y,off])
+        off += 1
+
+def vRest(off,*vars):
+    for v in vars:
+        ld([Y,off])
+        st([v])
+        off += 1
+
+#----------------------------------------
+# VIRQ
+
+label('vIRQ#92')
+ld([Y,vIrqCtx_v7])              #92
+ld(AC,Y)                        #93
+vSave(0xf7, fsmState)           #94 fsmState/sysArgs+7
+vSave(0xfd, vCpuSelect)         #96 vCpuSelect
+st([Y,0xff])                    #98 inUse
+ld('vIRQ#159')                  #99
+st([fsmState])                  #100
+label('vIRQ#10')
+vSave(0xe0,vAC,vAC+1,vPC,vPC+1) #101,10
+vSave(0xe4,vLR,vLR+1,vSP,vSP+1) 
+vSave(0xe8,vLAC,vLAC+1,vLAC+2,vLAC+3)
+vSave(0xec,vT2,vT2+1,vT3,vT3+1) 
+vSave(0xf0,sysArgs,sysArgs+1,sysArgs+2,sysArgs+3)
+vSave(0xf4,sysArgs+4,sysArgs+5,sysArgs+6)
+vSave(0xf8,sysFn,sysFn+1,vFAS,vFAE,vLAX)
+bra([fsmState])                 #28+28+101=157,+10=66
+ld(1,Y)                         #158,67
+label('vIRQ#159')
+ld([Y,vIRQ_v5])                 #159
+suba(2)                         #160
+st([vPC])                       #161
+ld([Y,vIRQ_v5+1])               #162
+st([vPC+1])                     #163
+ld(hi('ENTER'))                 #164
+st([vCpuSelect])                #165
+wait(188-166-extra)             #166 (+extra)
+jmp(Y,'vBlankFirst#190')        #188
+ld([channel])                   #189
+
+
+#----------------------------------------
+# VSAVE
+
+label('vsave#17')
+ld([vAC],Y)                     #17
+vSave(0xf7, fsmState)           #18 fsmState
+vSave(0xfd, vCpuSelect)         #20 vCpuSelect
+st([Y,0xff])                    #22 inUse
+ld('vsave#3a')                  #23
+st([fsmState])                  #24
+ld(hi('FSM21_ENTER'))           #25
+st([vCpuSelect])                #26
+adda(1,Y)                       #27
+jmp(Y,'NEXT')                   #28
+ld(-30/2)                       #29
+
+label('vsave#3a')
+adda(min(0,maxTicks-74/2))      #3
+blt('NEXT')                     #4
+ld(-6/2)                        #5
+ld([vAC],Y)                     #6
+ld('vsave#68a')                 #7
+bra('vIRQ#10')                  #8
+st([fsmState])                  #9
+label('vsave#68a')
+ld(hi('ENTER'))                 #68
+st([vCpuSelect])                #69
+adda(1,Y)                       #70
+jmp(Y,'NEXTY')                  #71
+ld(-74/2)                       #72
+
+
+#----------------------------------------
+# VRESTORE
+
+label('vrestore#17')
+ld('vrestore#3a')               #17 jump to fsm21
+st([fsmState])                  #18
+ld([vAC],Y)                     #19
+vRest(0xe2,vPC,vPC+1)           #20
+ld(hi('FSM21_ENTER'))           #24
+st([vCpuSelect])                #25
+bra('NEXT')                     #26
+ld(-28/2)                       #27
+
+label('vrestore#6a')
+bra('NEXT')                     #6
+ld(-8/2)                        #7
+
+label('vrestore#3a')
+adda(min(0,maxTicks-58/2))      #3
+blt('vrestore#6a')              #4
+ld([vAC],Y)                     #5
+ld('vrestore#3b')               #6
+st([fsmState])                  #7
+vRest(0xe4,vLR,vLR+1,vSP,vSP+1)
+vRest(0xe8,vLAC,vLAC+1,vLAC+2,vLAC+3)
+vRest(0xec,vT2,vT2+1,vT3,vT3+1)
+vRest(0xf0,sysArgs,sysArgs+1,sysArgs+2)
+vRest(0xf3,sysArgs+3,sysArgs+4,sysArgs+5,sysArgs+6)
+vRest(0xf8,sysFn,sysFn+1,vFAS,vFAE,vLAX)
+bra('NEXT')                     #8+24+24=56
+ld(-58/2)                       #57
+
+label('vrestore#3b')
+ld([frameCount])                #3
+adda([vAC+1])                   #4
+st([frameCount])                #5
+bmi('vrestore#8b')              #6
+suba([vAC+1])                   #7
+ora([vAC+1])                    #8
+bmi('vrestore#11b-c')           #9
+ld([vAC],Y)                     #10
+label('vrestore#11b-nc')
+bra('vrestore#13b')             #11
+nop()                           #12
+label('vrestore#8b')
+anda([vAC+1])                   #8
+bpl('vrestore#11b-nc')          #9
+ld([vAC],Y)                     #10
+label('vrestore#11b-c')
+ld(0xff)                        #11
+st([frameCount])                #12
+label('vrestore#13b')
+vRest(0xe0,vAC,vAC+1)           #13-16
+vRest(0xf7,fsmState)            #17-18
+ld(0)                           #19
+st([Y,0xff])                    #20 mark as unused
+ld([Y,0xfd])                    #21 saved vCpuSelect
+st([vCpuSelect],Y)              #22
+ld([vTicks])                    #23
+adda(-24/2-v6502_adjust)        #24 enough time for this and another instruction
+blt('vrestore#27b')             #25 possibly a v6502 instruction?
+ld([vTicks])                    #26
+adda(-30/2)                     #27 yes: enter interpreter
+jmp(Y,'ENTER')                  #28
+nop()                           #29-30=-1
+label('vrestore#27b')
+ld(hi('RESYNC'),Y)              #27 no: resync
+jmp(Y,'RESYNC')                 #28
+adda(maxTicks-26//2)            #29-26=3
+
+
+
+#----------------------------------------
+# EXCH -- atomic byte exchange
+
+label('exch#17')
+ld([vT2],X)                     #17
+ld([vT2+1],Y)                   #18
+ld([Y,X])                       #19
+st([vTmp])                      #20
+ld([vAC])                       #21
+st([Y,X])                       #22
+ld([vTmp])                      #23
+st([vAC])                       #24
+ld(hi('REENTER'),Y)             #25
+jmp(Y,'REENTER')                #26
+ld(-30/2)                       #27
+
+
 
 
 #-----------------------------------------------------------------------
