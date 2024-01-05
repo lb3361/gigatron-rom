@@ -1135,16 +1135,15 @@ ld(hi('sys_ReadRomDir'),Y)      #15
 jmp(Y,'sys_ReadRomDir')         #16
 ld([vAC+1])                     #17
 
-fillers(until=symbol('SYS_Out_22') & 255)
-
 #-----------------------------------------------------------------------
 # Extension SYS_Out_22
 #-----------------------------------------------------------------------
 
 # Send byte to output port
-#
 # Variables:
 #       vAC
+
+fillers(until=0xf4)
 
 label('SYS_Out_22')
 ld([sysArgs+0],OUT)             #15
@@ -1158,7 +1157,6 @@ ld(-22/2)                       #19
 #-----------------------------------------------------------------------
 
 # Read a byte from the input port
-#
 # Variables:
 #       vAC
 
@@ -2103,8 +2101,8 @@ else:  # NORMAL VIDEO CODE
 # first instruction is bra() which normally doesn't cross page boundaries,
 # in this case it will still jump into the right space, because branches
 # from $xxFF land in the next page anyway.
-while pc()&255 < 255:
-  nop()
+
+fillers(until=0xff)
 label('ENTER')
 bra('.next2')                   #0 Enter at '.next2' (so no startup overhead)
 # --- Page boundary ---
@@ -2211,7 +2209,7 @@ ld(hi('PREFIX35_PAGE'),Y)       #11
 jmp(Y,AC)                       #12
 ld([vPC+1],Y)                   #13
 
-# Instruction POKEA (39 xx), 28 cycles
+# Instruction POKEA (39 xx), 22 cycles
 # * Store word [xx] at location [vAC]
 # * Origin: https://forum.gigatron.io/viewtopic.php?p=2053#p2053
 #   Section 2. "POKE and DOKE work backwards"
@@ -2495,7 +2493,7 @@ jmp(Y,'.sys#16')                 #14
 
 # Instruction MOVIW (b1 vv hh ll), 30 cycles
 # * Stores immediate $hhll into word variable [vv]
-# * Trashes sysArgs[7] but STW(sysArgs6or7,...) works
+# * Trashes sysArgs[7] but vv=sysArgs[6-7] works
 label('MOVIW_v7')
 ld(hi('moviw#13'),Y)            #10
 jmp(Y,'moviw#13')               #11
@@ -4750,9 +4748,8 @@ nop()                           #19
 fillers(until=0xff)
 label('v6502_ENTER')
 bra('v6502_next2')              #0 v6502 primary entry point
-align(0x100, size=0x100)
-
 # --- Page boundary ---
+align(0x100, size=0x100)
 suba(v6502_adjust)              #1,19 Adjust for vCPU/v6520 timing differences
 
 #19 Addressing modes
@@ -5567,17 +5564,16 @@ ld(hi('v6502_brk'),Y)           #9
 jmp(Y,'v6502_brk')              #10
 #nop()                          #11 Overlap
 
-while pc()&255 < 255:
-  nop()
-
 # `v6502_RESUME' is the interpreter's secondary entry point for when
 # the opcode and operands were already fetched, just before the last hPulse.
 # It must be at $xxff, prefably somewhere in v6502's own code pages.
+
+fillers(until=0xff)
 label('v6502_RESUME')
 assert (pc()&255) == 255
 suba(v6502_adjust)              #0,11 v6502 secondary entry point
 # --- Page boundary ---
-align(0x100,size=0x200)
+align(0x100,size=0x100)
 st([vTicks])                    #1
 ld([v6502_ADL],X)               #2
 ld(hi('v6502_execute'),Y)       #3
