@@ -87,12 +87,13 @@ run: Docs/gtemu $(DEV)
 	# !!! Set terminal width to >225 chars !!!
 	Docs/gtemu $(DEV) | less -p 'line 0'
 
-export jsEmu=Utils/runjs/src
+export jsEmu=Utils/runjs
+
 runjs: $(DEV)
 	# Run ROM in javascript emulator in web browser (macOS)
-	cd "$(jsEmu)" && ln -sf ../../../$(DEV) gigatron.rom
-	(sleep 1 && open http://127.0.0.1:8000/src) &
-	cd "$(jsEmu)" && npm start
+	cd "$(jsEmu)/html" && ln -sf ../../../$(DEV) gigatron.rom
+	(sleep 1 && open http://127.0.0.1:8000/) &
+	python3 "$(jsEmu)/http-server.py" 
 
 test: Docs/gtemu $(DEV)
 	# Check for hSync errors in first ~30 seconds of emulation

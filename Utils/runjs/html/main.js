@@ -258,7 +258,12 @@ $(function() {
                 if (files.length != 0) {
                     event.preventDefault();
                     event.stopPropagation();
-                    loadGt1(files[0]);
+                    let fn = files[0].name.toLowerCase()
+                    if (fn.endsWith('.gt1')) {
+                        loadGt1(files[0])
+                    } else if (fn.endsWith('.vhd') || fn.endsWith('.img')) {
+                        spi.loadvhdfile(files[0])
+                    }
                 }
             }
         });
