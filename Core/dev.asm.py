@@ -2284,7 +2284,7 @@ ld(hi('jgt#13'),Y)              #10,12
 jmp(Y,'jgt#13')                 #11
 ld([vAC+1])                     #12
 
-# Instruction JLT (50 ll hh), 22/26 cycles (was LT)
+# Instruction JLT (50 ll hh), 22/24 cycles (was LT)
 # * Branch if negative (if(vACL<0)vPC=hhll[+2])
 # * Original idea from at67
 label('LT')
@@ -2293,7 +2293,7 @@ ld(hi('jlt#13'),Y)              #10
 jmp(Y,'jlt#13')                 #11
 ld([vAC+1])                     #12
 
-# Instruction JGE (53 ll hh), 22/26 cycles (was GE)
+# Instruction JGE (53 ll hh), 22/24 cycles (was GE)
 # * Branch if positive or zero (if(vACL>=0)vPC=hhll[+2])
 # * Original idea from at67
 label('GE')
@@ -2302,7 +2302,7 @@ ld(hi('jge#13'),Y)              #10
 jmp(Y,'jge#13')                 #11
 ld([vAC+1])                     #12
 
-# Instruction JLE (56 ll hh), 24/26 cycles (was LE)
+# Instruction JLE (56 ll hh), 22-24/26 cycles (was LE)
 # * Branch if negative or zero (if(vACL<=0)vPC=hhll[+2])
 # * Original idea from at67
 label('JLE_v7')
@@ -8528,13 +8528,15 @@ bra('addv#25')                  #23
 suba(1)                         #24
 
 # JNE implementation (24/26)
+# - always slower than BNE (24/24)
 label('jne#13')
 ld([vAC+1])                     #13
 ora([vAC])                      #14
+label('jne#15')
 beq('jccn#17')                  #15
 label('jccy#16')                # branch in 26 cycles
 ld([vPC+1],Y)                   #16
-label('jccy#17')                # branch in 26 cycles (with Y=PCH)
+label('jccy*#17')               # branch in 26 cycles (with Y=PCH)
 ld([Y,X])                       #17
 st([Y,Xpp])                     #18
 st([vPC])                       #19
@@ -8545,70 +8547,71 @@ jmp(Y,'NEXTY')                  #23
 ld(-26/2)                       #24
 
 # JEQ implementation (24/26)
+# - always slower than BEQ (24/24)
 label('jeq#13')
 ld([vAC+1])                     #13
 ora([vAC])                      #14
-beq('jccy#17')                  #15
+label('jeq#15')
+beq('jccy*#17')                 #15
 ld([vPC+1],Y)                   #16
 label('jccn#17')                # pass in 24 cycles
 ld(1)                           #17
-label('jccn#18')                # pass in 24 cycles (with AC=1)
+label('jccn*#18')               # pass in 24 cycles (with AC=1)
 adda([vPC])                     #18
 st([vPC])                       #19
 ld(hi('NEXTY'),Y)               #20
 jmp(Y,'NEXTY')                  #21
 ld(-24/2)                       #22
 
-# Jcc returns
-label('jccy#15')                # branch 26 cycles
-bra('jccy#17')                  #15
-ld([vPC+1],Y)                   #16
-label('jccn#15')                # pass 22 cycles
+# JGT implementation (22-24/26) [with vACH in AC]
+# - always faster than BGT (26/26)
+label('jgt#13')
+bpl('jne#15')                   #13
+ora([vAC])                      #14
+label('jccn#15')
 ld(1)                           #15
-label('jccn#16')                # pass 22 cycles (with AC=1)
 adda([vPC])                     #16
 st([vPC])                       #17
 ld(hi('NEXTY'),Y)               #18
 jmp(Y,'NEXTY')                  #19
 ld(-22/2)                       #20
 
-# JLT implementation (22/26) [with vACH in AC]
-label('jlt#13')
-bmi('jccy#15')                  #14
-bpl('jccn#16')                  #14
-ld(1)                           #15
-
-# JGE implementation (22/26) [with vACH in AC]
+# JGE implementation (22/24) [with vACH in AC]
+# - always faster than BGE (24/24)
 label('jge#13')
-bpl('jccy#15')                  #13
-bmi('jccn#16')                  #14
-ld(1)                           #15
-
-# JGT implementation (22-24/26) [with vACH in AC]
-label('jgt#13')
 bmi('jccn#15')                  #13
-ora([vAC])                      #14
-bne('jccy#17')                  #15
-ld([vPC+1],Y)                   #16
-ld(1)                           #17
-adda([vPC])                     #18
-st([vPC])                       #19
+label('jccy#15')                # branch in 24 cycles
+ld([vPC+1],Y)                   #14
+label('jccy*#15')               # branch in 24 cycles (with Y=PCH)
+ld([Y,X])                       #15
+st([Y,Xpp])                     #16
+st([vPC])                       #17
+ld([Y,X])                       #18
+st([vPC+1])                     #19
 ld(hi('NEXTY'),Y)               #20
 jmp(Y,'NEXTY')                  #21
 ld(-24/2)                       #22
 
-# JLE implementation (24/26) [with vACH in AC]
+# JLT implementation (22/24) [with vACH in AC]
+# - always faster than BLT (24/24)
+label('jlt#13')
+bmi('jccy*#15')                 #13
+ld([vPC+1],Y)                   #14
+ld(1)                           #15
+adda([vPC])                     #16
+st([vPC])                       #17
+ld(hi('NEXTY'),Y)               #18
+jmp(Y,'NEXTY')                  #19
+ld(-22/2)                       #20
+
+# JLE implementation (22-24/26) [with vACH in AC]
+# - faster than BLE (26/24) when passing, slower when branching
 label('jle#13')
-bmi('jccy#15')                  #13
+bpl('jeq#15')                   #13
 ora([vAC])                      #14
-beq('jccy#17')                  #15
+bra('jccy*#17')                 #15
 ld([vPC+1],Y)                   #16
-ld(1)                           #17
-adda([vPC])                     #18
-st([vPC])                       #19
-ld(hi('NEXTY'),Y)               #20
-jmp(Y,'NEXTY')                  #21
-ld(-24/2)                       #22
+
 
 
 #-----------------------------------------------------------------------
