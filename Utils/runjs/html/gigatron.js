@@ -38,6 +38,7 @@ export class Gigatron {
         this.ctrl = 0x7c;
         this.bank = 0;
         this.prevctrl = -1;
+        this.miso = 0;
     }
 
     /** advance simulation by one tick */
@@ -77,9 +78,9 @@ export class Gigatron {
      * @param {number} bus
      * @param {number} d
      */
-    aluOp(op, mode, bus, d) {
-        let b;
-
+    aluOp(op, mode, bus, d)
+    {
+        let b = 0;
         switch (bus) {
             case 0:
                 b = d;
@@ -150,8 +151,9 @@ export class Gigatron {
      * @param {number} bus
      * @param {number} d
      */
-    storeOp(mode, bus, d) {
-        let b;
+    storeOp(mode, bus, d)
+    {
+        let b = 0;
         let w = 1;
         let addr = this.addr(mode, d);
         switch (bus) {
@@ -197,13 +199,12 @@ export class Gigatron {
      */
     branchOp(mode, bus, d) {
         const ZERO = 0x80;
-        let c;
+        let c = true;
         let ac = this.ac ^ ZERO;
         let base = this.pc & 0xff00;
 
         switch (mode) {
             case 0: // jmp
-                c = true;
                 base = this.y << 8;
                 break;
             case 1: // bgt
