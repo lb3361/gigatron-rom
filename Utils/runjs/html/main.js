@@ -190,8 +190,6 @@ $(function() {
     });
     volumeSlider.trigger('input');
 
-    let timer;
-
     /** load a GT1 file
      * @param {File} file
      */
@@ -268,15 +266,18 @@ $(function() {
             }
         });
 
+    let timer = 0;
+    let lastdate = 0;
+
     /** start the simulation loop */
     function startRunLoop() {
         gamepad.start();
-
+        lastdate = Date.now()
         timer = setInterval(() => {
-            /* advance the simulation until the audio queue is full,
-             * or 10ms of simulated time has passed.
-             */
-            let cycles = cpu.hz / 100;
+            /* Self correcting simulation speed */
+            let newdate = Date.now()
+            let cycles = cpu.hz * Math.min(newdate-lastdate, 30)/1000
+            lastdate = newdate
             audio.drain();
             while (cycles-- >= 0 && !audio.full) {
                 cpu.tick();
@@ -287,7 +288,7 @@ $(function() {
             }
             blinkenLights.tick(); // don't need realtime update
             gamepad.tick();
-        }, audio.duration);
+        }, audio.duration * 500);
 
         audio.context.resume();
 

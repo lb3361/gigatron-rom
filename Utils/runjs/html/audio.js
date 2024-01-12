@@ -20,7 +20,7 @@ export class Audio {
         this.scheduled = 0;
         this.full = false;
 
-        let numSamples = Math.floor(SAMPLES_PER_SECOND / 100);
+        let numSamples = Math.floor(SAMPLES_PER_SECOND / 50);
         this.buffers = [];
         for (let i = 0; i < 8; i++) {
             let buffer = context.createBuffer(1,
