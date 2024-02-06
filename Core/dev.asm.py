@@ -7944,6 +7944,7 @@ st([fsmState])                  #17
 # * Copy nn bytes from [T3] to [T2].
 # * Handles page crossings. Peak rate 10 bytes/scanline.
 # * On return, T3 and T2 contain the next addresses.
+# * N:Cycles 1:58 2:84 3:110 4:84 5:112 6:138 7:164 8:138
 # * Origin: this is an improved version of the copy
 #   opcode I wrote for ROMvX0.
 oplabel('COPYN_v7')
@@ -8101,15 +8102,15 @@ anda(0xfc)                      #11
 beq('copy#14a')                 #12 -> page crossings
 ld([Y,X])                       #13
 st([Y,Xpp])                     #14
-st([sysArgs+0])                 #15 read four
+st([sysArgs+2])                 #15 read four
 ld([Y,X])                       #16
 st([Y,Xpp])                     #17
-st([sysArgs+1])                 #18
+st([sysArgs+3])                 #18
 ld([Y,X])                       #19
 st([Y,Xpp])                     #20
-st([sysArgs+2])                 #21
+st([sysArgs+4])                 #21
 ld([Y,X])                       #22
-st([sysArgs+3])                 #23
+st([sysArgs+5])                 #23
 ld('copy#3d')                   #24 ->#d : store four
 st([fsmState])                  #25
 bra('NEXT')                     #26
@@ -8197,19 +8198,19 @@ ld(-26/2)                       #23
 
 label('copy#3d')
 ld([vT2],X)                     #3
-ld([vT2])                       #4
-adda(4)                         #5
-st([vT2])                       #6
-anda(0xfc)                      #7
-beq('copy#10d')                 #8 -> page crossings
-ld([vT2+1],Y)                   #9
-ld([sysArgs+0])                 #10
+ld([vT2+1],Y)                   #4
+ld([vT2])                       #5
+adda(4)                         #6
+st([vT2])                       #7
+anda(0xfc)                      #8
+beq('copy#11d')                 #9 -> page crossings
+ld([sysArgs+2])                 #10
 st([Y,Xpp])                     #11
-ld([sysArgs+1])                 #12
+ld([sysArgs+3])                 #12
 st([Y,Xpp])                     #13
-ld([sysArgs+2])                 #14
+ld([sysArgs+4])                 #14
 st([Y,Xpp])                     #15
-ld([sysArgs+3])                 #16
+ld([sysArgs+5])                 #16
 st([Y,Xpp])                     #17
 ld([sysArgs+6])                 #18
 suba(4)                         #19
@@ -8225,17 +8226,29 @@ st([vCpuSelect])                #23
 adda(1,Y)                       #24
 jmp(Y,'NEXTY')                  #25
 ld(-28/2)                       #26
-label('copy#10d')
-ld([vT2])                       #10
-suba(4)                         #11
-st([vT2])                       #12
-ld([vT3])                       #13
-suba(4)                         #14
-st([vT3])                       #15
-ld('copy#3b')                   #16 ->#b : copy1by1
-st([fsmState])                  #17
-bra('NEXT')                     #18
-ld(-20/2)                       #19
+label('copy#11d')
+st([Y,Xpp])                     #11 copy one only
+ld([vT3])                       #12
+suba(3)                         #13
+st([vT3])                       #14 known noncarry
+ld([vT2])                       #15
+suba(3)                         #16
+st([vT2])                       #17
+beq('copy#20d')                 #18 maybe carry
+ld([sysArgs+6])                 #19
+suba(1)                         #20
+st([sysArgs+6])                 #21 known nonzero
+ld('copy#3b')                   #22 -> to copy1b1
+st([fsmState])                  #23
+bra('NEXT')                     #24
+ld(-26/2)                       #25
+label('copy#20d')
+ld('copy#3c')                   #20 -> to carry resolution
+st([fsmState])                  #21
+bra('NEXT')                     #22
+ld(-24/2)                       #23
+
+
 
 # ----------------------------------------
 # MOVL MOVF
