@@ -1,6 +1,6 @@
 
 # compile c programs with GLCC
-CC=../../../Compilers/glcc/build/glcc
+CC=glcc
 
 # use 32k map modified by overlay horizon.ovl
 CFLAGS=-map=32k -rom=dev7

@@ -1,5 +1,5 @@
 ROM=dev7
-GLCC=../../../Compilers/glcc/build/glcc
+GLCC=glcc
 D=../
 
 default: ${D}gtmine.gt1
