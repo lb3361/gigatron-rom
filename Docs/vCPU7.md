@@ -200,7 +200,7 @@ without changing the contents of the accumulator `vAC`.
 | MOVQW  | `4a VV II`    | 28 | Store immediate `II` into word `VV..VV+1`
 | MOVIW  | `b1 VV HH LL` | 30 | Store immediate `HHLL` into word `VV..VV+1`
 | MOVW   | `bc YY XX`    | 36 | Copy word from `XX..XX+1` to `YY..YY+1`<br>(trashes `sysArgs7`)
-| INCV   | `70 VV`       | 22 to 28 | Add 1 to word `VV..VV+1`
+| INCV   | `70 VV`       | 22 to 26 | Add 1 to word `VV..VV+1`
 | ADDV   | `66 VV`       | 30 | Add `vAC` contents to word `VV..VV+1`
 | SUBV   | `68 VV`       | 30 | Subtract `vAC` contents from word `VV..VV+1`
 | ADDIV  | `35 7d II VV` | 38 to 40 | Add immediate `II` to word `VV..VV+1`
