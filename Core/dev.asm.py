@@ -10564,23 +10564,22 @@ ld(-38/2)                       #35
 
 # INCV implementation
 label('incv#13')
-ld(AC,X)                        #13
-ld([X])                         #14
-adda(1)                         #15
+st([vTmp],X)                    #13
+ld(1)                           #14
+adda([X])                       #15
 beq('incv#18')                  #16
 st([X])                         #17
 ld(hi('NEXTY'),Y)               #18
 jmp(Y,'NEXTY')                  #19
 ld(-22/2)                       #20
 label('incv#18')
-ld(0,Y)                         #18
-st([Y,Xpp])                     #19
-ld([Y,X])                       #20
-adda(1)                         #21
-st([Y,X])                       #22
-ld(hi('REENTER'),Y)             #23
-jmp(Y,'REENTER')                #24
-ld(-28/2)                       #25
+ld(1)                           #18
+adda([vTmp],X)                  #19
+adda([X])                       #20
+st([X])                         #21
+ld(hi('NEXTY'),Y)               #22
+jmp(Y,'NEXTY')                  #23
+ld(-26/2)                       #24
 
 # NEGV implementation
 label('negv#13')
