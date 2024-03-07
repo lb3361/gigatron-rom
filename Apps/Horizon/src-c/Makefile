@@ -11,6 +11,7 @@ LDFLAGS=--no-runtime-bss-init
 # target
 TARGET=../Horizon_c.gt1
 
+all: $(TARGET)
 
 $(TARGET): Horizon.c Horizon.ovl
 	${CC} ${CFLAGS} ${LDFLAGS} Horizon.c -o $@
