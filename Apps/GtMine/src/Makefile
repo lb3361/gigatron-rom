@@ -2,9 +2,7 @@ ROM=dev7
 GLCC=glcc
 D=../
 
-default: ${D}gtmine.gt1
-
-all: ${D}gtmine.gt1 ${D}gtmine64.gt1
+all: ${D}gtmine.gt1
 
 ${D}gtmine.gt1: gtmine.c
 	${GLCC} -o $@ gtmine.c -DMEM32=1 -map=32k,./gtmine32.ovl -rom=${ROM}
