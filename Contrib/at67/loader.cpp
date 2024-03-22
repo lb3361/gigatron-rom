@@ -1588,11 +1588,12 @@ namespace Loader
                 Cpu::setRAM(0x0017, HI_BYTE(execAddress));
 
                 // vLR
-                Cpu::setRAM(0x001a, LO_BYTE(execAddress-2));
+                Cpu::setRAM(0x001a, LO_BYTE(execAddress));
                 Cpu::setRAM(0x001b, HI_BYTE(execAddress));
 
                 // Reset stack and constants
                 Cpu::setRAM(STACK_POINTER, 0x00);
+                Cpu::setRAM(STACK_POINTER+1, 0x00); // vTmp or vSPH
                 Cpu::setRAM(ZERO_CONST_ADDRESS, 0x00);
                 Cpu::setRAM(ONE_CONST_ADDRESS, 0x01);
 
