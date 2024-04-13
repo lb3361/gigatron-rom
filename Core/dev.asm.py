@@ -6997,7 +6997,7 @@ st([sysArgs+0])                 #13
 ld([vAC])                       #14
 st([Y,X])                       #15
 ld([sysArgs+0],X)               #16
-ld(0x3f)                        #17
+xora(0x3f)                      #17
 bra('sl:next#20')               #18
 st([Y,X])                       #19
 label('sl:next#20')
