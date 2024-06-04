@@ -80,6 +80,19 @@ dev512k7.rom: Core/* Apps/*/* Makefile interface.json
 		Main=Apps/MainMenu/MainMenu_sd.gcl\
 		Reset=Core/Reset.gcl
 
+mscp.rom: Core/* Apps/*/* Makefile interface.json
+	python3 Core/dev.asm.py \
+		-DROMNAME=\"$@\" -DDISPLAYNAME=\"[128k7]\"\
+		-DWITH_128K_BOARD=1 \
+		-DROMNAME=\"$@\" \
+		MSCP=Apps/MSCP/mscp_128k.gt1z\
+		Egg=Apps/Horizon/Horizon_c.gt1z\
+		SpiSd=Apps/More/system7.gt1z\
+		Main=Apps/MainMenu/MainMenu_mscp.gcl\
+		Reset=Core/Reset.gcl
+
+
+
 
 run: Docs/gtemu $(DEV)
 	# Run ROM in reference emulator on console
