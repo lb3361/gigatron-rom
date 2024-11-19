@@ -382,7 +382,7 @@ conditional jump opcodes.
 | STLAC  | `35 20`    | 38          | Store `vLAC` into `[vAC]..[vAC]+3` into long accumulator `vLAC`
 | MOVL   | `35 db YY XX` | 30+30    | Copy long from `XX..XX+3` to `YY..YY+3`<br>(trashes `sysArgs[0-7]`)
 | LEEKA  | `35 32 XX` | 28+34       | Copy long from `[vAC]..[vAC]+3` to `XX..XX+3`<br>(trashes `sysArgs[2-7]`)
-| LOKEA  | `35 32 XX` | 28+34       | Copy long from `XX.XX+3` to `[vAC]..[vAC]+3`<br>(trashes `sysArgs[2-7]`)
+| LOKEA  | `35 34 XX` | 28+34       | Copy long from `XX.XX+3` to `[vAC]..[vAC]+3`<br>(trashes `sysArgs[2-7]`)
 | ADDL   | `35 00`    | 22+30+28    | Add long `[vAC]..[vAC]+3` to long accumulator `vLAC`<br>(trashes `sysArgs[5-7]`)
 | SUBL   | `35 04`    | 22+28+28    | Subtract long `[vAC]..[vAC]+3` from long accumulator `vLAC`<br>(trashes `sysArgs[5-7]`)
 | ANDL   | `35 06`    | 22+28       | Bitwise and of `[vAC]..[vAC]+3` with long accumulator `vLAC`<br>(trashes `sysArgs7`)
