@@ -580,19 +580,21 @@ Its sole purpuse is to make locations `0x1f2-0x1f5` available for other purposes
 This instruction was implemented to shorten the reset sequence at
 address `0x1f0` which used to be six bytes long and is now only two
 bytes long. The locations `0x1f2-0x1f5` can then be used for other
-purposes such as `vIrqCtx_v7` or `ledTempo_v7
+purposes such as `vIrqCtx_v7` or `ledTempo_v7`.
 
-Variable `ledTempo` has been displaced to a new wlocation
+Variable `ledTempo` has been displaced to a new location
 `ledTempo_v7` at address 0x1f3. The old location is now used by the
 private variable `vTmp` which is used as a scratch variable by the
 implementation of many vCPU instructions. This means that writing
 anything into the old `ledTempo` location is harmless but will be
-quickly overwritten by vCPU opcoded whose implementation uses `vTmp`.
+quickly overwritten by any of the many vCPU opcodes
+whose implementation uses `vTmp`.
 
 Some private system variables have also been changed to make space for
-two critical variables used by dev128k7.rom to separate the memory
-bank used for video output and the memory bank seen by the vCPU. The
-third byte of the entropy counter has been moved to address 0x1f2 and
+two critical variables used by `dev128k7.rom` to separate the memory
+bank used for video output and the memory bank seen by the vCPU,
+which was the project that started the whole DEV7ROM adventure.
+The third byte of the entropy counter has been moved to address 0x1f2 and
 the led timer has been moved to address 0x1f4. Their former locations
 are now used to cache the control bits that should be used during
 video generation and during vcpu execution. Although overwriting these
