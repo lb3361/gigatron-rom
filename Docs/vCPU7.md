@@ -248,7 +248,7 @@ used before `ADDI` to add word constant to `vAC`.
 **History:**
 A variant of `LDNI` exists in ROMvX0 but negates its argument (slower)
 instead of using a 2-complements approach. In order to make it as fast
-as possible, this is implementated entirely in page 3 just like `LDI`
+as possible, this is entirely implemented in page 3 just like `LDI`
 and `LDWI`.
 
 
@@ -282,21 +282,42 @@ The following python program simulates its operation:
 def mulq(vAC, KK):
     tmp = vAC
     vAC <<= 1
-    while KK != 0:
-        if KK & 0x80 == 0x80:
+    while KK & 0xff:
+        if KK & 0x80:
             vAC <<= 1; KK <<= 1
-        elif KK & 0xc0 == 0x40:
+        elif KK & 0x40:
             vAC += tmp; KK <<= 2
-        else KK & 0xe0 == 0x20:
+        else:
             vAC -= tmp; KK <<= 3
+    return vAC
 ```
 
 For instance `KK=0b01000000` mutiplies by 3, `KK=0b10100000` by 5,
-`KK=0b01100000` by 6, `KK=0b11001000` by 7, etc.  The execution time
-is composed of a 44 cycles overhead, 14 to 18 cycles per shift, and 24
-cycles per addition or subtraction. It is recommended to use `MULQ`
-for all small multiplication except for the multiplications by 2 and 4
-which are better implemented with `LSLW`.
+`KK=0b01100000` by 6, `KK=0b11001000` by 7, etc.  It is recommended to
+use `MULQ` for all small multiplication except for the multiplications
+by 2 and 4 which are better implemented with `LSLW`.
+The following python code builds a table that can be used
+to convert small multipliers into `MULQ` arguments and
+computes the corresponding execution times:
+```python
+def mulq_table():
+    mulq_tbl, mulq_cyc = {}, {}
+    for k in range(256):
+        vAC, KK, cycles = 2, k, 44
+        while KK & 0xff:
+            if KK & 0xc0 == 0xc0:
+                cycles += 28; KK <<= 2; vAC <<= 2
+            elif KK & 0xc0 == 0x80:
+                cycles += 18; KK <<= 1; vAC <<= 1
+            elif KK & 0xc0 == 0x40:
+                cycles += 24; KK <<= 2; vAC += 1
+            else:
+                cycles += 24; KK <<= 3; vAC -= 1
+        if vAC not in mulq_tbl or cycles < mulq_cyc[vAC]:
+            if vAC not in (0,1,2,4):
+                mulq_tbl[vAC], mulq_cyc[vAC] = k, cycles
+    return mulq_tbl, mulq_cyc
+```
 
 **History:**
 A SYS call to perform 16 bits multiplications and divisions was
