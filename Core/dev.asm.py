@@ -859,6 +859,9 @@ ld(-20/2)                       #17
 #       sysArgs[6:7]    (changed)
 #
 # Original design: at67
+#
+# The improved dev7rom version is substantially faster.
+# Alternatively use the new opcode MULW.
 
 label('SYS_Multiply_s16_v6_66')
 label('SYS_Multiply_s16_v7_34')
@@ -868,13 +871,14 @@ nop()
 
 #-----------------------------------------------------------------------
 # Extension SYS_Divide_s16_v6_80: 15 bit division
-# Also known as SYS_Divide_s16_v7_34
+# Also known as SYS_Divide_u16_v7_34
 #-----------------------------------------------------------------------
 #
 # Computes the Euclidean division of 0<=A<65536 and 0<B<65536.
-# An external wrapper is needed to handle signed division.
-# Returns product in vAC as well as sysArgs[01]
-# Returns remainder in sysArgs[45]
+# The s16 component of the name is a misnomer (should be u15).
+# For 16 bits signed division, additional code must handle the signs
+# Return the quotient in vAC as well as sysArgs[01]
+# Return the remainder in sysArgs[45]
 #
 #       sysArgs[0:1]    Dividend A (in) Quotient (out)
 #       sysArgs[2:3]    Divisor B (in)
@@ -882,7 +886,10 @@ nop()
 #       sysArgs[6:7]    (changed)
 #
 # Original design by at67.
-# Improved for unrestricted unsigned division
+#
+# The improced dev7rom version handles unrestricted 16 bits unsigned division
+# that is 0 <= A,B <= 65535. An external wrapper is still needed for signed
+# division. Alternatively any of the new opcodes RDIVU or RDIVS.
 
 label('SYS_Divide_s16_v6_80')
 label('SYS_Divide_u16_v7_34')
