@@ -400,7 +400,7 @@ conditional jump opcodes.
 | Opcode |  Encoding  | Cycles      | Function
 | ------ | ---------- | ----------- | -------
 | LDLAC  | `35 1e`    | 38          | Load long `[vAC]..[vAC]+3` into long accumulator `vLAC`
-| STLAC  | `35 20`    | 38          | Store `vLAC` into `[vAC]..[vAC]+3` into long accumulator `vLAC`
+| STLAC  | `35 20`    | 38          | Store long accumulator `vLAC` into `[vAC]..[vAC]+3`
 | MOVL   | `35 db YY XX` | 30+30    | Copy long from `XX..XX+3` to `YY..YY+3`<br>(trashes `sysArgs[0-7]`)
 | LEEKA  | `35 32 XX` | 28+34       | Copy long from `[vAC]..[vAC]+3` to `XX..XX+3`<br>(trashes `sysArgs[2-7]`)
 | LOKEA  | `35 34 XX` | 28+34       | Copy long from `XX.XX+3` to `[vAC]..[vAC]+3`<br>(trashes `sysArgs[2-7]`)
