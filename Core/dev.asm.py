@@ -7605,7 +7605,7 @@ oplabel('CMPLU_v7')
 bra('fsm1eop0#16')
 ld('cmplu#3a')
 
-# Instruction LSRXA (35 18) [20*(n/8)+(54 to 242) total cycles]
+# Instruction LSRXA (35 18) [20*(n/8)+(42,210,242,242,227,227,210,160)[n%8] cycles]
 # * Shift extended long accumulator LAX right by vACL positions
 # * LAX := LAX >> (vACL & 0x3f)
 # * Trashes vAC, sysArgs[67]
@@ -9402,8 +9402,8 @@ bra(AC)                         #11
 nop()                           #12
 
 label('lsrax#13')
-bra('lsraxs#15')                #13 <<0
-ld('rorx0#3')                   #14
+bra('lsraxq#15')                #13 <<0
+ld(hi('ENTER'))                 #14
 bra('lsraxs#15')                #13 <<1
 ld('rorx1#3')                   #14
 bra('lsraxn#15')                #13 <<2
@@ -9418,6 +9418,12 @@ bra('lsraxs#15')                #13 <<6
 ld('rorx6#3')                   #14
 bra('lsraxs#15')                #13 <<7
 ld('rorx7#3')                   #14
+
+label('lsraxq#15')
+st([vCpuSelect])                #15
+adda(1,Y)                       #16
+jmp(Y,'NEXTY')                  #17
+ld(-20/2)                       #18
 
 label('lsraxs#15')
 st([fsmState])                  #15
@@ -9455,14 +9461,7 @@ ld(-10/2)                       #9
 # ----------------------------------------
 # Right shift workers
 
-label('rorx0#3')
-ld(hi('ENTER'))                 #3
-st([vCpuSelect])                #4
-adda(1,Y)                       #5
-jmp(Y,'REENTER')                #6
-ld(-10/2)                       #7
-
-label('rorx0#9')
+label('rorx#9')
 ld(hi('ENTER'))                 #9
 st([vCpuSelect])                #10
 adda(1,Y)                       #11
@@ -9474,7 +9473,7 @@ ld([sysArgs+6])                 #3
 suba(1)                         #4
 st([sysArgs+6],X)               #5
 suba(vLAX)                      #6
-blt('rorx0#9')                  #7
+blt('rorx#9')                   #7
 ld([vAC])                       #8
 anda(1)                         #9
 adda(127)                       #10
@@ -9492,7 +9491,7 @@ adda(min(0,maxTicks-36/2))      #3 >>2 state
 blt('rorxn#6')                  #4
 ld([sysArgs+6])                 #5
 suba(vLAX)                      #6
-ble('rorx0#9')                  #7
+ble('rorx#9')                   #7
 adda(vLAX-1)                    #8
 st([sysArgs+6],X)               #9
 ld([vAC])                       #10
@@ -9568,7 +9567,7 @@ ld([sysArgs+6])                 #3
 suba(1)                         #4
 st([sysArgs+6],X)               #5
 suba(vLAX)                      #6
-blt('rorx0#9')                  #7
+blt('rorx#9')                   #7
 ld([vAC])                       #8
 adda(AC)                        #9
 adda(AC)                        #10
@@ -9586,7 +9585,7 @@ ld([sysArgs+6])                 #3
 suba(1)                         #4
 st([sysArgs+6],X)               #5
 suba(vLAX)                      #6
-blt('rorx0#9')                  #7
+blt('rorx#9')                   #7
 ld([vAC])                       #8
 adda(AC)                        #9
 st([vAC+1])                     #10
