@@ -450,8 +450,8 @@ Three shift instructions operate on the 40 bits extended accumulator `vLAX`.
 
 | Opcode | Encoding      | Cycles     | Function
 | ------ | ----------    | ---------- | -------
-| LSRXA  | `35 18`       | 54 to 382  | Right shift `vLAX` by `vAC & 0x3f` positions
-| LSLXA  | `35 12`       | 36 to 422  | Left shift `vLAX` by `vAC & 0x3f` positions
+| LSRXA  | `35 18`       | 42 to 322  | Right shift `vLAX` by `vAC & 0x3f` positions
+| LSLXA  | `35 12`       | 38 to 415  | Left shift `vLAX` by `vAC & 0x3f` positions
 | RORX   | `35 1a`       | 198        | Right rotate `vLAX` from/into bit 0 of `vAC`
 
 The following picture illustrates how `RORX` rotate bits:
