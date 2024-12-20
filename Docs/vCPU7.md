@@ -391,11 +391,11 @@ The FSM framework made it possible to have both.
 
 Long arithmetic instructions are implemented with the FSM framework
 and use `sysArgs5..sysArgs7` as working memory. Most of these
-instructions implicitly address the long accumulator `vLAC` and use
-`vAC` to specify the address of their argument.  Long integers cannot
-cross page boundaries. As usual the signed comparisons leave in `vAC`
-a number that is less than, equal to, or greater than zero ready for
-conditional jump opcodes.
+instructions implicitly address the 32 bits long accumulator `vLAC`
+and use `vAC` to specify the address of their argument.  Long integers
+cannot cross page boundaries. As usual the signed comparisons leave in
+`vAC` a number that is less than, equal to, or greater than zero ready
+for conditional jump opcodes.
 
 | Opcode |  Encoding  | Cycles      | Function
 | ------ | ---------- | ----------- | -------
@@ -432,48 +432,64 @@ but severe overhead of long monolithic instructions.
 
 ### Extended arithmetic, shifts, and floating point
 
-A small number of opcodes deal with floating point numbers in
-Microsoft format. Because the five bytes long floating point numbers
-do not naturally align on page boundaries, crossing page boundaries
-is allowed by the `LDFAC` and `STFAC` functions at the cost of
-additional cycles. These functions work with a virtual floating
-point accumulator composed of registers `vFAS` for the sign,
-`vFAE` for the exponent, and `vLAX` for the mantissa.
+A couple instruction operate on the extended 40 bits accumulator `vLAX`
+whose upper 32 bits overlate the long accumulator `vLAC`.
+
+
+| Opcode | Encoding      | Cycles     | Function
+| ------ | ----------    | ---------- | -------
+| NEGX   | `35 0e`       | 22+14+24   | Negate the extended accumulator `vLAX`
+| MACX   | `35 1c`       | 394 to 842 | Add `vACL` (8 bits) times `sysArgs[0..4]` to `vLAX`<br>(trashes `sysArgs[5..7]`, `vACH`)
+| LSRXA  | `35 18`       | 42 to 322  | Right shift `vLAX` by `vAC & 0x3f` positions<br>(trashes `sysArgs[6..7]`, `vAC`)
+| LSLXA  | `35 12`       | 38 to 415  | Left shift `vLAX` by `vAC & 0x3f` positions<br>(trashes `sysArgs[6..7]`, `vAC`)
+| RORX   | `35 1a`       | 198        | Right rotate `vLAX` from/into bit 0 of `vAC`.<br>(trashes `sysArgs[6..7]`, `vAC`)
+
+The opcode `MACX` is a building block for both the long and the
+floating point multiplication routines. It multiplies a 32 bits number (in `sysArgs[0..4]`)
+by a 8 bit number in `vAC` and adds the product to the extended accumulator `vLAX`.
+
+Opcodes `LSRXA` and `LSLXA` respectively shift the extended
+accumulator right or left by `vAC & 0x3f` positions.  They are most
+efficient when `vAC` contains a multiple of eight because such a shift
+can be implemented by displacing or clearing entire bytes. As usual on
+the Gigatron, finer shift amounts are implemented using tables (right
+shift) or repeated additions (left shift).
+
+Opcode `RORX` implements a 41 bits rotation that encompasses
+the 40 bits of `vLAX` and the least significant bit of `vAC`,
+as illustrated below:
+```
+RORX      .-->--[LAX+4...LAX]-->--.
+          '--<------[VAC0]-----<--'
+```
+
+A couple additional opcodes help with floating point numbers
+encoded with the same 40 bits floating point format used
+by the once popular Microsoft basic interpreters.
+
 
 | Opcode | Encoding      | Cycles     | Function
 | ------ | ----------    | ---------- | -------
 | MOVF   | `35 dd YY XX` | 30+38      | Copy fp number from `XX..XX+4` to `YY..YY+4`<br>(trashes `sysArgs[0..7]`)
 | LDFAC  | `35 27`       | typ 72     | Load fp number `[vAC]..[vAC]+4` into float accumulator<br>(trashes `vAC` `vT3` `sysArgs[5-7]`)
 | STFAC  | `35 25`       | typ 66     | Store float accumulator into fp var `[vAC]..[vAC]+4`<br>(trashes `vAC` `sysArgs[5-7]`)
+| LDFARG | `35 29`       | typ 72     | Load floating point argument `[vAC]..[vAC]+4`<br>(trashes `vAC` `sysArgs[5-7]`)
 
-Three shift instructions operate on the 40 bits extended accumulator `vLAX`.
+Opcode `MOVF` merely moves five consecutive bytes in page zero.
 
-| Opcode | Encoding      | Cycles     | Function
-| ------ | ----------    | ---------- | -------
-| LSRXA  | `35 18`       | 42 to 322  | Right shift `vLAX` by `vAC & 0x3f` positions
-| LSLXA  | `35 12`       | 38 to 415  | Left shift `vLAX` by `vAC & 0x3f` positions
-| RORX   | `35 1a`       | 198        | Right rotate `vLAX` from/into bit 0 of `vAC`
+Opcodes `LDFAC` and `STFAC` respectively unpack and pack a floating
+point number into a virtual floating point accumulator composed of
+registers `vFAS` for the sign (bit 7), `vFAE` for the
+exponent, and `vLAX` for the mantissa.  Because five bytes floating
+point numbers do not naturally align on page boundaries, opcodes
+`LDFAC` and `STFAC` can deal with floating point numbers that cross
+page boundaries, at the expense of many additional cycles.
 
-The following picture illustrates how `RORX` rotate bits:
-```
-RORX      .-->--[LAX+4...LAX]-->--.
-          '--<------[VAC0]-----<--'
-```
-
-The following instructions are mostly used to accelerate the floating point runtime.
-See the source code comments for a more precise documentation.
-
-| Opcode | Encoding      | Cycles     | Function
-| ------ | ----------    | ---------- | -------
-| LDFARG | `35 29`       | typ 72     | Load floating point argument `[vAC]..[vAC]+4`
-| NEGX   | `35 0e`       | 22+14+24   | Negate extended accumulator `vLAX`
-| MACX   | `35 1c`       | 394 to 842 | Adds the product of `vACL` (8 bits) by `sysArgs[0..4]` (32 bits) to `vLAX` (40 bits)
-
-**History:**
-These extended arithmetic and floating point support instructions
-would have been very hard to code without the FSM framework.
-They have been selected after profiling the GLCC floating point runtime.
-
+Opcode `LDFARG` is solely intended as a helper for the floating point
+emulation routines. It unpacks a second floating point number by storing
+its mantissa in `sysArgs[0..4]` and its exponent in the low byte of `vT2`.
+Bit 0 of `vFAS` then indicates whether this number has a sign different
+from the number loaded by `LDFAC` which is stored in bit 7 of `vFAS`.
 
 
 ### Context and interrupts
