@@ -7873,7 +7873,7 @@ st([Y,Xpp])                     #28
 bmi('addiv#31')                 #29
 suba([vTmp])                    #30
 ora([vTmp])                     #31
-bpl('addiv#34')                 #32
+bpl('addiv#34nc')               #32
 ld(1)                           #33
 label('addiv#34c')
 adda([Y,X])                     #34
@@ -7883,10 +7883,10 @@ jmp(Y,'NEXTY')                  #37
 ld(-40//2)                      #38
 label('addiv#31')
 anda([vTmp])                    #31
-bmi('addiv#34')                 #32
+bmi('addiv#34c')                #32
 label('addiv#33')
 ld(1)                           #33
-label('addiv#34')
+label('addiv#34nc')
 ld(hi('NEXTY'),Y)               #34
 jmp(Y,'NEXTY')                  #35
 ld(-38//2)                      #36
