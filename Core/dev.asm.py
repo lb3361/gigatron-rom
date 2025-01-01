@@ -313,14 +313,11 @@ zpReserved      = zpByte() # Recycled and still unused. Candidate future uses:
                            # - v8080: ???
 vCpuSelect      = zpByte() # Active interpreter page
 
-# Entropy harvested from SRAM startup and controller input
-entropy         = zpByte(2)
-
-# Former entropy+2
 if WITH_128K_BOARD:
-    ctrlVideo   = zpByte() # ctrl bits for video access
+  entropy      = zpByte(2) # Entropy harvested from SRAM startup and controller input
+  ctrlVideo    = zpByte()  # ctrl bits for video access
 else:
-    reserved1   = zpByte()
+  entropy      = zpByte(3) # Entropy harvested from SRAM startup and controller input
 
 # Visible video
 videoY          = zpByte() # Counts up from 0 to 238 in steps of 2
@@ -391,7 +388,7 @@ soundTimer      = zpByte()
 if WITH_128K_BOARD:
   ctrlCopy      = zpByte() # ctrl bits for vcpu access
 else:
-  reserved2     = zpByte()
+  zpReserved2   = zpByte()
 
 # LED state machine
 ledState_v2     = zpByte() # Current LED state
@@ -443,7 +440,8 @@ userVars2_v7    = zpByte(0)
 videoTable      = 0x0100 # Indirection table: Y[0] dX[0]  ..., Y[119] dX[119]
 
 vReset          = 0x01f0 # Reset stub
-entropy2        = 0x01f2 # (displaced) Entropy hidden state
+if WITH_128K_BOARD:
+  entropy2      = 0x01f2 # (displaced) Entropy hidden state
 ledTempo        = 0x01f3 # (displaced) Led timer reset value
 ledTimer        = 0x01f4 # (displaced) Ticks until next LED change
 vIrqCtx_v7      = 0x01f5 # context page for irq
@@ -669,8 +667,12 @@ xora(193)
 label('.initEnt2')
 st([entropy+1])
 ld(1,Y)
-adda([Y,entropy2])
-st([Y,entropy2])
+if WITH_128K_BOARD:
+  adda([Y,entropy2])            # displaced third entropy byte
+  st([Y,entropy2])
+else:
+  adda([entropy+2])             # preserved third entropy byte
+  st([entropy+2])
 ld([vAC+1],Y)
 ld([vAC+0])
 adda(1)
@@ -744,37 +746,37 @@ st([ledState_v2])               # Setting to 1..126 means "stopped"
 # ROM type (see also Docs/GT1-files.txt)
 romTypeValue = symbol('romTypeValue_DEVROM')
 
-label('softReset#20')
-ld(0)                           #20
-st([vSP])                       #21 vSP
-st([vSP+1])                     #22
-ld(hi('videoTop_v5'),Y)         #23
-st([Y,lo('videoTop_v5')])       #24 Show all 120 pixel lines
-st([Y,vIrqCtx_v7])              #25
-st([Y,vIRQ_v5])                 #26 Disable vIRQ dispatch
-st([Y,vIRQ_v5+1])               #27
-st([soundTimer])                #28 soundTimer
-st([vLR])                       #29 vLR
-st([vLR+1])                     #30
+label('softReset#24')
+ld(0)                           #24
+st([vSP])                       #25 vSP
+st([vSP+1])                     #26
+ld(hi('videoTop_v5'),Y)         #27
+st([Y,lo('videoTop_v5')])       #28 Show all 120 pixel lines
+st([Y,vIrqCtx_v7])              #29
+st([Y,vIRQ_v5])                 #30 Disable vIRQ dispatch
+st([Y,vIRQ_v5+1])               #31
+st([soundTimer])                #32 soundTimer
+st([vLR])                       #33 vLR
+st([vLR+1])                     #34
 st([videoModeC]) if WITH_512K_BOARD else None
-ld(0x7c)                        #31/32
-st([Y,ctrlBits])                #32/33
+ld(0x7c)                        #35/36
+st([Y,ctrlBits])                #36/37
 st([ctrlVideo])  if WITH_128K_BOARD else nop()
 st([ctrlCopy])   if WITH_128K_BOARD else nop()
-ld('nopixels')                  #35/36
+ld('nopixels')                  #39/40
 st([videoModeC]) if not WITH_512K_BOARD else None
-st([videoModeB])                #37
-st([videoModeD])                #38
+st([videoModeB])                #41
+st([videoModeD])                #42
 # Set romTypeValue
 assert (romTypeValue & 7) == 0
-ld(romTypeValue)                #39 Set ROM type/version and clear channel mask
-st([romType])                   #40
+ld(romTypeValue)                #43 Set ROM type/version and clear channel mask
+st([romType])                   #44
 # Reset expansion board
-ctrl(0b01111111)                #41 Reset signal (default state | 0x3)
-ctrl(0b01111100)                #42 Default state.
+ctrl(0b01111111)                #45 Reset signal (default state | 0x3)
+ctrl(0b01111100)                #46 Default state.
 # Adjust ticks
-ld([vTicks])                    #43 Always load after ctrl
-adda(-34/2)                     #44-34=10
+ld([vTicks])                    #47 Always load after ctrl
+adda(-38/2)                     #48-38=10
 st([vTicks])                    #11
 ld('Reset')                     #12 Reset.gt1 from EPROM
 st([sysArgs+0])                 #13
@@ -1040,9 +1042,28 @@ ld(hi('REENTER'),Y)             #15 slot 0xdd
 jmp(Y,'REENTER')                #16
 ld(-20/2)                       #17
 
-ld(hi('REENTER'),Y)             #15 slot 0xe0
-jmp(Y,'REENTER')                #16
-ld(-20/2)                       #17
+
+#-----------------------------------------------------------------------
+# Extension SYS_DoubleDabble_v7_34
+#-----------------------------------------------------------------------
+
+# SYS function to help converting integers into ascii in any base.
+# The string of bytes [sysArgs[2:3]...sysArgs[0:1]-1] represents
+# a number in base sysArgs[4]. Calling the SYS function doubles
+# this number and adds 1 if vAC<=0 (msb set). If necessary
+# sysArgs[2:3] is decremented to make space for a new digit.
+#
+# sysArgs[0:1]       (in)    End address
+# sysArgs[2:3]       (inout) Start address
+# sysArgs[4]         (in)    Base
+# vAC                (in)    Carry in high bit
+# sysArgs[5]         (used)
+
+label('SYS_DoubleDabble_v7_34')
+ld(hi('sys_DoubleDabble'),Y)    #15 slot 0xe0
+jmp(Y,'sys_DoubleDabble')       #16
+ld([vAC+1])                     #17
+
 
 #-----------------------------------------------------------------------
 # Extension SYS_ScanMemoryExt_v6_50
@@ -1210,8 +1231,12 @@ xora([entropy+1])               #41 Mix entropy
 xora([serialRaw])               #42 Mix in serial input
 adda([entropy+0])               #43
 st([entropy+0])                 #44
-adda([Y,entropy2])              #45 Some hidden state
-st([Y,entropy2])                #46
+if WITH_128K_BOARD:
+  adda([Y,entropy2])            #45 Some hidden state
+  st([Y,entropy2])              #46 (displaced third entropy byte)
+else:
+  adda([entropy+2])             #45 Some hidden state
+  st([entropy+2])               #46 (preserved third entropy byte)
 bmi(pc()+3)                     #47
 bra(pc()+3)                     #48
 xora(64+16+2+1)                 #49
@@ -2388,14 +2413,16 @@ ld(hi('push#13'),Y)             #10
 jmp(Y,'push#13')                #11
 ld([vSP+1],Y)                   #12
 
-# Instruction LDNI (78 xx), 16 cycles
-# * Load negative constant vAC:=0xffxx
-label('LDNI_v7')
-st([vAC])                       #10
-ld(0xff)                        #11
-st([vAC+1])                     #12
-bra('NEXTY')                    #13
-ld(-16/2)                       #14
+# Instruction slot @ 0x78 (formerly LDNI)
+ld(hi('reset'),Y)               #10
+jmp(Y,'reset')                  #11
+
+# Instruction DBNE (7a vv ii), 24/26 cycles
+# * Decrement byte vv and branches to ii+2 if nonzero
+label('DBNE_v7')
+ld(hi('dbne#13'),Y)             #10
+jmp(Y,'dbne#13')                #11
+ld(AC,X)                        #12
 
 # Instruction MULQ (7d kk)
 # * Execute multiplication code 0x1kk
@@ -2488,10 +2515,9 @@ label('PEEK')
 ld(hi('peek'),Y)                #10
 jmp(Y,'peek')                   #11
 
-# SYS restart
-label('.sys#13')
-ld(hi('.sys#16'),Y)              #13,12
-jmp(Y,'.sys#16')                 #14
+# Instruction slot @ 0xaf
+ld(hi('reset'),Y)               #10
+jmp(Y,'reset')                  #11
 
 # Instruction MOVIW (b1 vv hh ll), 30 cycles
 # * Stores immediate $hhll into word variable [vv]
@@ -2542,17 +2568,25 @@ ld(hi('movw#16'),Y)             #13
 jmp(Y,'movw#16')                #14
 adda(1,X)                       #15
 
-# Continue INC/LD/LDI/LDNI (9 bytes)
+# Continue LD/ANDI/INC
 label('ld#13')
-st([vAC])                       #13
+st([vAC])                       #13 LD,ANDI
 ld(0)                           #14
 st([vAC+1])                     #15
 label('ld#16')
-bra('NEXT')                     #16
+bra('NEXT')                     #16 INC
 ld(-18/2)                       #17
 
-# Free instruction slots (4 bytes, keep for new page)
-fillers(until=0xca)
+# Instruction ADDSV (c6 vv ss), 30 cycles + 24/26 when crossing half page
+# * Add signed immediate ss to word [vv..vv+1].
+label('ADDSV_v7')
+ld(hi('addsv#13'),Y)            #10
+jmp(Y,'addsv#13')               #11 + overlap
+
+# SYS restart
+label('.sys#13')
+ld(hi('.sys#16'),Y)              #13,12
+jmp(Y,'.sys#16')                 #14
 
 # SYS call re-entry code (fixed address)
 label('REENTER_28')
@@ -2958,8 +2992,12 @@ ld(1,Y)                         #17
 adda([entropy+0])               #18
 st([entropy+0])                 #19
 st([vAC+0])                     #20
-adda([Y,entropy2])              #21
-st([Y,entropy2])                #22
+if WITH_128K_BOARD:
+  adda([Y,entropy2])            #21
+  st([Y,entropy2])              #22
+else:
+  adda([entropy+2])             #21
+  st([entropy+2])               #22
 bmi('.sysRnd0')                 #23
 bra('.sysRnd1')                 #24
 xora(64+16+2+1)                 #25
@@ -7519,59 +7557,59 @@ def oplabel(name):
 # * Trashes sysArgs[567]
 # * No page crossings
 oplabel('ADDL_v7')
-bra('fsm1bop0#16')
-ld('addl#3a')
+bra('fsm1bop0#16')              #14
+ld('addl#3a')                   #15
 
 # Instruction COPYS (35 02 <vv> <d><nnnnnnn>)
 # * This is front end for COPYN
 # * <d>=0: copy <nnnnnnn> bytes from [vSP] to <vv>
 #   <d>=1: copy <nnnnnnn> bytes from <vv> to [vSP]
 oplabel('COPYS_v7')
-bra('fsm18op2#16')
-ld('copys#3a')
+bra('fsm18op2#16')              #14
+ld('copys#3a')                  #15
 
 # Instruction SUBL (35 04) [22+28+28 cycles]
 # * Subtract long ([vAC]..[vAC]+3) from LAC
 # * Trashes sysArgs[567]
 # * No page crossings
 oplabel('SUBL_v7')
-bra('fsm1aop0#16')
-ld('subl#3a')
+bra('fsm1aop0#16')              #14
+ld('subl#3a')                   #15
 
 # Instruction ANDL (35 06) [22+28 cycles]
 # * LAC := LAC & ([vAC]..[vAC]+3)
 # * Trashes sysArgs[7]
 oplabel('ANDL_v7')
-bra('fsm1aop0#16')
-ld('andl#3a')
+bra('fsm1aop0#16')              #14
+ld('andl#3a')                   #15
 
-# Instruction ORL (35 08) [22+28 cycles]
+# instruction ORL (35 08) [22+28 cycles]
 # * LAC := LAC | ([vAC]..[vAC]+3)
 # * Trashes sysArgs[7]
 oplabel('ORL_v7')
-bra('fsm1aop0#16')
-ld('orl#3a')
+bra('fsm1aop0#16')              #14
+ld('orl#3a')                    #15
 
 # Instruction XORL (35 0a) [22+28 cycles]
 # * LAC := LAC ^ ([vAC]..[vAC]+3)
 # * Trashes sysArgs[7]
 oplabel('XORL_v7')
-bra('fsm1aop0#16')
-ld('xorl#3a')
+bra('fsm1aop0#16')              #14
+ld('xorl#3a')                   #15
 
 # Instruction NEGVL (35 0c vv) [28+24 cycles]
 # * Negate long (vv..vv+3)
 # * Trashes sysArgs[67]
 oplabel('NEGVL_v7')
-bra('fsm1bop1#16')
-ld('negvl#3a')
+bra('fsm1bop1#16')              #14
+ld('negvl#3a')                  #15
 
 # Instruction NEGX (35 0e) [22+14+24 cycles]
 # * Negate extended accumulator LAX
 # * Trashes sysArgs[67]
 oplabel('NEGX_v7')
-bra('fsm1bop0#16')
-ld('negx#3a')
+bra('fsm1bop0#16')              #14
+ld('negx#3a')                   #15
 
 # Instruction LSLVL (35 10 vv) [28+30 cycles]
 # * Shift left long word (vv..vv+3)
@@ -7586,32 +7624,32 @@ ld('lslvl#3a')                  #15
 # * LAX := LAX << (vACL & 0x3f)
 # * Trashes sysArgs[67]
 oplabel('LSLXA_v7')
-bra('fsm1eop0#16')
-ld('lslxa#3a')
+bra('fsm1eop0#16')              #14
+ld('lslxa#3a')                  #15
 
 # Instruction CMPLS (35 14) [22+20+24 max cycles]
 # * Signed compare LAC with long ([vAC]..[vAC]+3)
 # * On return sets vAC to a positive/negative/zero value
 # * Trashes sysArgs[7]. No page crossings
 oplabel('CMPLS_v7')
-bra('fsm1eop0#16')
-ld('cmpls#3a')
+bra('fsm1eop0#16')              #14
+ld('cmpls#3a')                  #15
 
 # Instruction CMPLU (35 16) [22+20+24 max cycles]
 # * Unsigned compare LAC with long ([vAC]..[vAC]+3)
 # * On return sets vAC to a positive/negative/zero value
 # * Trashes sysArgs[7]. No page crossings
 oplabel('CMPLU_v7')
-bra('fsm1eop0#16')
-ld('cmplu#3a')
+bra('fsm1eop0#16')              #14
+ld('cmplu#3a')                  #15
 
 # Instruction LSRXA (35 18) [20*(n/8)+(42,210,242,242,227,227,210,160)[n%8] cycles]
 # * Shift extended long accumulator LAX right by vACL positions
 # * LAX := LAX >> (vACL & 0x3f)
 # * Trashes vAC, sysArgs[67]
 oplabel('LSRXA_v7')
-bra('fsm1cop0#16')
-ld('lsrxa#3a')
+bra('fsm1cop0#16')              #14
+ld('lsrxa#3a')                  #15
 
 # Instruction RORX (35 1a) [total 198 cycles]
 # * Rotate extended long accumulator LAX right
@@ -7619,8 +7657,8 @@ ld('lsrxa#3a')
 #      ,-->--[LAX+4...LAX]-->--.
 #      `--<------[VAC0]-----<--'
 oplabel('RORX_v7')
-bra('fsm1cop0#16')
-ld('rorx#3a')
+bra('fsm1cop0#16')              #14
+ld('rorx#3a')                   #15
 
 # Instruction MACX (35 1c) [394 to 842 total cycles]
 # * Add vACL (8 bits) times sysArgs[0..3] (32 bits) to LAX (40 bits)
@@ -7630,20 +7668,21 @@ oplabel('MACX_v7')
 ld(hi('macx#17'),Y)             #14
 jmp(Y,'macx#17')                #15
 
-# Instruction LDLAC (35 1e), 38 cycles
+# Instruction LDLAC (35 1e), 36 cycles
 # * Loads [vAC..vAC+3] into LAC
 # * No page crossings
 oplabel('LDLAC_v7')
 ld(hi('ldlac#17'),Y)            #14
 jmp(Y,'ldlac#17')               #15
+# ld([vTicks])                  #16 [overlap]
 
 # Instruction STLAC (35 20), 34 cycles
 # * Store LAC into [vAC..vAC+3]
 # * No page crossings
 oplabel('STLAC_v7')
-ld(hi('stlac#17'),Y)            #14
-jmp(Y,'stlac#17')               #15
-nop()                           #16
+ld([vTicks])                    #14 overlap with ldlac
+bra('stlac#17')                 #15 with shenanigans to preseve
+ld(hi('stlac#19'),Y)            #16 STLAC location
 
 # Instruction INCVL (35 23 xx), 22+(16/20/24/26) cycles
 # * Increment long [xx..xx+3]
@@ -7689,14 +7728,10 @@ oplabel('VRESTORE_v7')
 ld(hi('vrestore#17'),Y)         #14
 jmp(Y,'vrestore#17')            #15
 
-# Instruction EXCH (35 2f) 30 cycles
-# * Exchanges vACL with the byte at address [vT2].
-#   Useful for atomic updates such as
-#      MOVQW('frameCount',vT2); LDI(0); EXCH()
-oplabel('EXCH_v7')
-ld(hi('exch#17'),Y)             #14
-jmp(Y,'exch#17')                #15
-nop()
+### Instruction slot (35 2f) [formerly EXCH]
+nop()                           #14
+bra('reset')                    #15
+nop()                           #16
 
 # Instruction LEEKA (35 32 vv) 28+34 cycles
 # * Copy long [vAC]...[vAC+3] to vv..vv+3
@@ -7712,9 +7747,10 @@ oplabel('LOKEA_v7')
 bra('fsm1bop1#16')              #14
 ld('lokea#3a')                  #15
 
-# Free instruction slots
-
-fillers(until=0x39)
+### Instruction slot (33 36)
+nop()                           #14
+bra('reset')                    #15
+nop()                           #16
 
 # Instruction RDIVS (35 39 xx) [~1250 cycles total]
 # - Signed division of [xx] by vAC
@@ -7756,14 +7792,16 @@ ld(hi('NEXTY'),Y)               #20
 jmp(Y,'NEXTY')                  #21
 ld(-24//2)                      #22
 
-# Instruction RESET_v7.
-# * Causes a soft reset. Called by 'vReset' only.
-oplabel('RESET_v7')
-ld(min(0,maxTicks-88//2))       #14 serious margin
-adda([vTicks])                  #15
-blt('retry17#18')               #16
-ld(hi('softReset#20'),Y)        #17
-jmp(Y,'softReset#20')           #18
+# Instruction BLIT_v7 (35 48)
+oplabel('BLIT_v7')
+ld(hi('blit#17'),Y)             #14
+jmp(Y,'blit#17')                #15
+
+# Instruction FILL_v7 (35 4a) 
+oplabel('FILL_v7')
+ld(hi('fsm22op0#17'),Y)         #14
+jmp(Y,'fsm22op0#17')            #15
+ld('fill#3a')                   #16
 
 # Instruction BGT (35 4d xx) [26 cycles]
 # - Branch if positive (if(vACL>0)vPCL=xx)
@@ -7807,9 +7845,11 @@ ld(hi('NEXTY'),Y)               #22
 jmp(Y,'NEXTY')                  #23
 ld(-26//2)                      #24
 
-fillers(until=0x62)
+### Instruction slot (35 61)
+bra('reset')                    #14
+nop()                           #15
 
-# Instruction DOKEI (35 62 ih il), 30 cycles
+# Instruction DOKEI (35 63 ih il), 30 cycles
 # * Store immediate word ihil at location [vAC]
 oplabel('DOKEI_v7')
 ld([Y,X])                       #14
@@ -7828,8 +7868,6 @@ ld(hi('NEXTY'),Y)               #26
 jmp(Y,'NEXTY')                  #27
 ld(-30//2)                      #28
 
-fillers(until=0x72)
-
 # Instruction BNE (35 72 xx) [24 cycles]
 # * Branch if not zero (if(vACL!=0)vPCL=xx)
 assert (pc() & 255) == (symbol('NE') & 255)
@@ -7847,79 +7885,17 @@ ld(hi('NEXTY'),Y)               #20
 jmp(Y,'NEXTY')                  #21
 ld(-24//2)                      #22
 
-# restart helper
-label('retry17#18')
-bra('bccn*#20')                 #18
-ld(-2)                          #19
+# stlac continuation (shenanigans)
+label('stlac#17')
+jmp(Y,'stlac#19')               #17
+ld([vAC+1],Y)                   #18
 
-# Instruction ADDIV (35 7d ii vv), 38-40 cycles
-# * Add byte immediate ii to var [vv]+=ii
-oplabel('ADDIV_v7')
-ld(min(0,maxTicks-40//2))       #14
-adda([vTicks])                  #15
-blt('retry17#18')               #16
-ld([vPC])                       #17
-adda(2)                         #18
-st([vPC])                       #19
-ld([Y,X])                       #20 ii
-st([Y,Xpp])                     #21
-st([vTmp])                      #22
-ld([Y,X])                       #23 vv
-ld(AC,X)                        #24
-ld(0,Y)                         #25
-ld([Y,X])                       #26
-adda([vTmp])                    #27
-st([Y,Xpp])                     #28
-bmi('addiv#31')                 #29
-suba([vTmp])                    #30
-ora([vTmp])                     #31
-bpl('addiv#34nc')               #32
-ld(1)                           #33
-label('addiv#34c')
-adda([Y,X])                     #34
-st([Y,X])                       #35
-ld(hi('NEXTY'),Y)               #36
-jmp(Y,'NEXTY')                  #37
-ld(-40//2)                      #38
-label('addiv#31')
-anda([vTmp])                    #31
-bmi('addiv#34c')                #32
-label('addiv#33')
-ld(1)                           #33
-label('addiv#34nc')
-ld(hi('NEXTY'),Y)               #34
-jmp(Y,'NEXTY')                  #35
-ld(-38//2)                      #36
-
-# Instruction SUBIV (35 9c ii vv), 38-40 cycles
-# * Subtract byte immediate ii to var [vv]-=ii
-oplabel('SUBIV_v7')
-ld(min(0,maxTicks-40//2))       #14
-adda([vTicks])                  #15
-blt('retry17#18')               #16
-ld([vPC])                       #17
-adda(2)                         #18
-st([vPC])                       #19
-ld([Y,X])                       #20 ii
-st([Y,Xpp])                     #21
-st([vTmp])                      #22
-ld([Y,X])                       #23 vv
-ld(AC,X)                        #24
-ld(0,Y)                         #25
-ld([Y,X])                       #26
-bmi('subiv#29')                 #27
-suba([vTmp])                    #28
-st([Y,Xpp])                     #29
-ora([vTmp])                     #30
-bpl('addiv#33')                 #31
-bmi('addiv#34c')                #32
-ld(0xff)                        #33
-label('subiv#29')
-st([Y,Xpp])                     #29
-anda([vTmp])                    #30
-bpl('addiv#33')                 #31
-bmi('addiv#34c')                #32
-ld(0xff)                        #33
+# Instruction RESET_v7 [formerly ADDIV]
+# * Causes a soft reset. Called by 'vReset' only.
+oplabel('RESET_v7')
+label('reset')
+ld(hi('reset#17'),Y)            #14
+jmp(Y,'reset#17')               #15
 
 # bgt continuation
 label('bgt#17')
@@ -7931,6 +7907,49 @@ st([vPC])                       #21
 ld(hi('NEXTY'),Y)               #22
 jmp(Y,'NEXTY')                  #23
 ld(-26//2)                      #24
+
+# fsm relay (1 arg)
+label('fsmxxop1#19')
+st([vCpuSelect])                #19
+ld([Y,X])                       #20
+st([sysArgs+6])                 #21
+ld(1)                           #22
+adda([vCpuSelect],Y)            #23
+adda([vPC])                     #24
+st([vPC])                       #25
+jmp(Y,'NEXT')                   #26
+ld(-28/2)                       #27
+
+# fsm14 relay (1 arg) for mulw, rdivu, rdivs
+label('fsm14op1#16')
+st([fsmState])                  #16
+bra('fsmxxop1#19')              #17
+ld(hi('FSM14_ENTER'))           #18
+
+# fsm18 relay (1 arg) for copyn exbi
+label('fsm18op1#16')
+st([fsmState])                  #16
+bra('fsmxxop1#19')              #17
+ld(hi('FSM18_ENTER'))           #18
+
+# fsm1b relay (1 arg) for incvl negvl lslvl
+label('fsm1bop1#16')
+st([fsmState])                  #16
+bra('fsmxxop1#19')              #17
+ld(hi('FSM1B_ENTER'))           #18
+
+### Instruction slot (35 99) [or relay]
+nop()
+nop()
+nop()
+
+### Instruction slot (35 9c) [formetly SUBIV]
+bra('reset')                    #14
+nop()                           #15
+
+### Free space for relay/instructions (31 bytes)
+
+fillers(until=0xbd)
 
 # fsm18 relay (2 args)
 label('fsm18op2#16')
@@ -7948,8 +7967,6 @@ st([vCpuSelect])                #26
 adda(1,Y)                       #27
 jmp(Y,'NEXT')                   #28
 ld(-30/2)                       #29
-
-fillers(until=0xcb)
 
 # Instruction COPY (35 cb)
 # * Copy up to vAC (max 256) bytes from [T3] to [T2]
@@ -7972,21 +7989,31 @@ st([fsmState])                  #17
 # * Origin: this is an improved version of the copy
 #   opcode I wrote for ROMvX0.
 oplabel('COPYN_v7')
-ld('copy#3a')                   #14
-bra('fsm18op1#17')              #15
-st([fsmState])                  #16
+bra('fsm18op1#16')              #14
+ld('copy#3a')                   #15
 
-# fsm relay (1 arg)
-label('fsmxxop1#19')
-st([vCpuSelect])                #19
-ld([Y,X])                       #20
-st([sysArgs+6])                 #21
-ld(1)                           #22
-adda([vCpuSelect],Y)            #23
-adda([vPC])                     #24
-st([vPC])                       #25
-jmp(Y,'NEXT')                   #26
-ld(-28/2)                       #27
+# Instruction EXBA (35 d1 ii), 28+18 cycles
+# * Byte at address [vAC] becomes ii.
+# * Former value of bytes at address [vAC] ends up in vAC.
+oplabel('EXBA_v7')
+bra('fsm18op1#16')              #14
+ld('exba#3a')                   #15
+
+# Instruction NOTVL (35 d3 vv) [28+24 cycles]
+# * Complements long (vv..vv+3)
+# * Trashes sysArgs[67]
+oplabel('NOTVL_v7')
+bra('fsm1bop1#16')              #14
+ld('notvl#3a')                  #15
+
+# fsm1 relay (0 args)
+label('fsm1aop0#16')
+st([fsmState])                  #16
+ld(hi('FSM1A_ENTER'))           #17
+st([vCpuSelect])                #18
+adda(1,Y)                       #19
+jmp(Y,'NEXT')                   #20
+ld(-22/2)                       #21
 
 # Instruction MOVL (35 db yy xx), 30+30 cycles
 # * Move four bytes long from [xx] to [yy]
@@ -8003,15 +8030,6 @@ ld('movl#3a')                   #15
 oplabel('MOVF_v7')
 bra('fsm18op2#16')              #14
 ld('movf#3a')                   #15
-
-# fsm1a relay (0 args)
-label('fsm1aop0#16')
-st([fsmState])                  #16
-ld(hi('FSM1A_ENTER'))           #17
-st([vCpuSelect])                #18
-adda(1,Y)                       #19
-jmp(Y,'NEXT')                   #20
-ld(-22/2)                       #21
 
 # fsm1b relay (0 args)
 label('fsm1bop0#16')
@@ -8040,22 +8058,7 @@ adda(1,Y)                       #19
 jmp(Y,'NEXT')                   #20
 ld(-22/2)                       #21
 
-# fsm14 relay (1 arg) for mulw, rdivu, rdivs
-label('fsm14op1#16')
-st([fsmState])                  #16
-bra('fsmxxop1#19')              #17
-ld(hi('FSM14_ENTER'))           #18
-
-# fsm1b relay (1 arg) for incvl negvl lslvl
-label('fsm1bop1#16')
-st([fsmState])                  #16
-bra('fsmxxop1#19')              #17
-ld(hi('FSM1B_ENTER'))           #18
-
-# fsm18 relay (1 arg) for copyn
-label('fsm18op1#17')
-bra('fsmxxop1#19')              #17
-ld(hi('FSM18_ENTER'))           #18
+### Free space for relays/instructions (14 bytes)
 
 
 #-----------------------------------------------------------------------
@@ -8340,6 +8343,25 @@ ld([vSP+1])                     #16
 st([Y,X])                       #17
 bra('NEXT')                     #18
 ld(-20/2)                       #19
+
+
+# ----------------------------------------
+# EXBA
+
+label('exba#3a')
+ld([vAC],X)                     #3
+ld([vAC+1],Y)                   #4
+ld([Y,X])                       #5
+st([vAC])                       #6
+ld(0)                           #7
+st([vAC+1])                     #8
+ld([sysArgs+6])                 #9
+st([Y,X])                       #10
+ld(hi('ENTER'))			#11
+st([vCpuSelect])		#12
+adda(1,Y)			#13
+jmp(Y,'REENTER')		#14
+ld(-18/2)			#15
 
 
 #-----------------------------------------------------------------------
@@ -10528,11 +10550,11 @@ jmp(Y,'REENTER')                #34
 ld(-38/2)                       #35
 
 # STLAC implementation
-label('stlac#17')
-ld([vTicks])                    #17 carry
-adda(min(0,maxTicks-34/2))      #18
-blt('retry1f#21')               #19
-ld([vAC+1],Y)                   #20
+label('stlac#19')
+# ld([vTicks])
+# ld([vAC+1],Y)
+adda(min(0,maxTicks-34/2))      #19
+blt('retry1f#22')               #20
 ld([vAC],X)                     #21
 ld([vLAC])                      #22
 st([Y,Xpp])                     #23
@@ -10548,25 +10570,24 @@ ld(-34/2)                       #32
 
 # LDLAC implementation
 label('ldlac#17')
-ld([vTicks])                    #17 carry
-adda(min(0,maxTicks-38/2))      #18
-blt('retry1f#21')               #19
-ld([vAC+1],Y)                   #20
-ld([vAC],X)                     #21
-ld([Y,X])                       #22
-st([vLAC])                      #23
-st([Y,Xpp])                     #24
-ld([Y,X])                       #25
-st([vLAC+1])                    #26
-st([Y,Xpp])                     #27
-ld([Y,X])                       #28
-st([vLAC+2])                    #29
-st([Y,Xpp])                     #30
-ld([Y,X])                       #31
-st([vLAC+3])                    #32
-ld(hi('REENTER'),Y)             #33
-jmp(Y,'REENTER')                #34
-ld(-38/2)                       #35
+adda(min(0,maxTicks-38/2))      #17
+blt('retry1f#20')               #18
+ld([vAC+1],Y)                   #19
+ld([vAC],X)                     #20
+ld([Y,X])                       #21
+st([vLAC])                      #22
+st([Y,Xpp])                     #23
+ld([Y,X])                       #24
+st([vLAC+1])                    #25
+st([Y,Xpp])                     #26
+ld([Y,X])                       #27
+st([vLAC+2])                    #28
+st([Y,Xpp])                     #29
+ld([Y,X])                       #30
+st([vLAC+3])                    #31
+ld(hi('NEXTY'),Y)               #32
+jmp(Y,'NEXTY')                  #33
+ld(-36/2)                       #34
 
 # INCV implementation
 label('incv#13')
@@ -10606,6 +10627,16 @@ ld(hi('NEXTY'),Y)               #22
 jmp(Y,'NEXTY')                  #23
 ld(-26/2)                       #24
 
+# RESET_v7 implementation
+
+label('reset#17')
+ld(min(0,maxTicks-88//2))       #17 serious margin
+adda([vTicks])                  #18
+blt('retry1f#21')               #19
+nop()                           #20
+ld(hi('softReset#24'),Y)        #21
+jmp(Y,'softReset#24')           #22
+nop()                           #23
 
 
 #-----------------------------------------------------------------------
@@ -10661,6 +10692,7 @@ adda(1,Y)                       #27
 jmp(Y,'NEXT')                   #28
 ld(-30/2)                       #29
 
+
 #----------------------------------------
 # SYS_Unpack implementation
 
@@ -10715,6 +10747,27 @@ st([vPC])                       #23
 ld(hi('NEXTY'),Y)               #24
 jmp(Y,'NEXTY')                  #25
 ld(-28/2)                       #26
+
+
+# ----------------------------------------
+# SYS_DoubleDabble implementation
+
+label('sys_DoubleDabble')
+anda(0x80,X)                    #18
+ld([X])                         #19
+st([sysArgs+5])                 #20
+ld([sysArgs+0])                 #21
+st([vAC])                       #22
+ld([sysArgs+1])                 #23
+st([vAC+1])                     #24
+ld('ddab#3a')                   #25
+st([fsmState])                  #26 schedule fix in fsm22
+ld(hi('FSM22_ENTER'))           #27
+st([vCpuSelect])                #28
+adda(1,Y)                       #29
+jmp(Y,'NEXT')                   #30
+ld(-32/2)                       #31
+
 
 #----------------------------------------
 # More vCPU opcodes
@@ -10858,6 +10911,59 @@ adda(1,X)                       #14
 bra('ldxw#17')                  #15
 ld('stxw#3a')                   #16
 
+# DBNE implementation
+label('dbne#13')
+#ld(AC,X)
+ld([X])                         #13
+suba(1)                         #14
+st([X])                         #15
+bne('dbne#18')                  #16
+ld([vPC])                       #17
+adda(1)                         #18
+st([vPC])                       #19
+ld(hi('NEXTY'),Y)               #20
+jmp(Y,'NEXTY')                  #21
+ld(-24/2)                       #22
+label('dbne#18')
+adda(2,X)                       #18
+ld([vPC+1],Y)                   #19
+ld([Y,X])                       #20
+label('dbne#21')
+st([vPC])                       #21
+ld(hi('NEXTY'),Y)               #22
+jmp(Y,'NEXTY')                  #23
+ld(-26/2)                       #24
+
+# ADDSV implementation
+label('addsv#13')
+st([vTmp])                      #13
+ld([vPC+1],Y)                   #14
+st([Y,Xpp])                     #15
+ld([Y,X])                       #16
+ld([vTmp],X)                    #17
+adda([X])			#18
+xora([X])                       #19
+blt('addsv#22')                 #20 was bit7 swapped?
+xora([X])                       #21
+st([X])                         #22 no ==> no carry
+ld([vPC])                       #23
+adda(1)                         #24
+st([vPC])                       #25
+ld(hi('NEXTY'),Y)               #26 return to vcpu
+jmp(Y,'NEXTY')                  #27 in 30 cycles
+ld(-30/2)                       #28
+label('addsv#22')
+st([X])                         #22 yes ==> maybe carry
+ld('addsv#3a')			#23
+st([fsmState])			#24 schedule fix in fsm22
+ld(hi('FSM21_ENTER'))	        #25
+st([vCpuSelect])		#26
+adda(1,Y)                       #27
+jmp(Y,'NEXT')                   #28
+ld(-30/2)			#29
+
+
+
 
 
 #-----------------------------------------------------------------------
@@ -10882,6 +10988,45 @@ suba(1)                         #5
 ld(hi('vBlankStart'),Y)         #6
 jmp(Y,[vReturn])                #7
 ld([channel])                   #8
+
+
+# ----------------------------------------
+# ADDSV continuation
+
+label('addsv#3a')
+ld([vPC+1],Y)                   #3 possible carry in addsv
+ld([vPC])                       #4
+adda(1)                         #5
+st([vPC],X)                     #6
+ld([Y,X])                       #7 asgument: address
+st([vTmp])                      #8
+st([Y,Xpp])                     #9
+ld([Y,X])                       #10 argument: immediate
+ld(0,Y)                         #11
+ld([vTmp],X)                    #12
+blt('addsv#15a')                #13
+ld([Y,X])                       #14
+st([Y,Xpp])                     #15 0 <= imm < 128
+blt('addsv#18a-nc')             #16
+ld(1)                           #17
+label('addsv#18a-c')
+adda([Y,X])                     #18 carry path
+st([Y,X])                       #19
+ld(hi('ENTER'))                 #20
+st([vCpuSelect])                #21
+adda(1,Y)                       #22
+jmp(Y,'NEXTY')                  #23
+ld(-26/2)                       #24
+label('addsv#15a')
+st([Y,Xpp])                     #15 -128 <= imm < 0
+blt('addsv#18a-c')              #16
+ld(0xff)                        #17
+label('addsv#18a-nc')
+ld(hi('ENTER'))                 #18 no carry path
+st([vCpuSelect])                #19
+adda(1,Y)                       #20
+jmp(Y,'NEXTY')                  #21
+ld(-24/2)                       #22
 
 
 # ---------------------------------------
@@ -11047,23 +11192,526 @@ adda(maxTicks-26//2)            #29-26=3
 
 
 
-#----------------------------------------
-# EXCH -- atomic byte exchange
 
-label('exch#17')
-ld([vT2],X)                     #17
-ld([vT2+1],Y)                   #18
-ld([Y,X])                       #19
-st([vTmp])                      #20
-ld([vAC])                       #21
-st([Y,X])                       #22
-ld([vTmp])                      #23
-st([vAC])                       #24
-ld(hi('REENTER'),Y)             #25
-jmp(Y,'REENTER')                #26
-ld(-30/2)                       #27
+#-----------------------------------------------------------------------
+#
+#   $2200 ROM page 34: SYS_DoubleDabble, FILL_v7
+#
+#-----------------------------------------------------------------------
+
+fillers(until=0xff)
+label('FSM22_ENTER')
+bra(pc()+4)                     #0
+align(0x100, size=0x100)
+bra([fsmState])                 #1
+assert (pc() & 255) == (symbol('NEXT') & 255)
+label('FSM22_NEXT')
+adda([vTicks])                  #0
+bge([fsmState],warn=False)      #1
+st([vTicks])                    #2
+adda(maxTicks)                  #3
+bgt(pc()&255)                   #4
+suba(1)                         #5
+ld(hi('vBlankStart'),Y)         #6
+jmp(Y,[vReturn])                #7
+ld([channel])                   #8
 
 
+
+# ----------------------------------------
+# SYS_DoubleDabble continuation
+
+label('ddab#3a')
+ld('ddab#3b')                   #3
+st([fsmState])                  #4
+ld([vAC])                       #5
+xora([sysArgs+2])               #6
+bne('ddab#9a')                  #7
+ld([vAC+1])                     #8
+xora([sysArgs+3])               #9
+bne('ddab#12a')                 #10
+ld([sysArgs+5])                 #11
+bne('ddab#14a')                 #12
+ld(hi('ENTER'))                 #13
+st([vCpuSelect])                #14
+adda(1,Y)                       #15
+jmp(Y,'REENTER')                #16
+ld(-20/2)                       #17
+label('ddab#9a')
+wait(12-9)                      #9
+label('ddab#12a')
+ld('ddab#3c')                   #12
+st([fsmState])                  #13
+label('ddab#14a')
+ld([vAC])                       #14 vAC-=1
+beq('ddab#17a')                 #15
+suba(1)                         #16
+st([vAC])                       #17
+bra('NEXT')                     #18
+ld(-20/2)                       #19
+label('ddab#17a')
+st([vAC])                       #17
+ld([vAC+1])                     #18
+suba(1)                         #19
+st([vAC+1])                     #20
+nop()                           #21
+bra('NEXT')                     #22
+ld(-24/2)                       #23
+
+label('ddab#3b')
+ld([vAC])                       #3 extend
+st([sysArgs+2],X)               #4
+ld([vAC+1])                     #5
+st([sysArgs+3],Y)               #6
+st(1,[Y,X])                     #7
+ld(hi('ENTER'))                 #8
+st([vCpuSelect])                #9
+adda(1,Y)                       #10
+jmp(Y,'NEXTY')                  #11
+ld(-14/2)                       #12
+
+label('ddab#3c')
+ld('ddab#3a')                   #3
+st([fsmState])                  #4
+ld(sysArgs+5,X)                 #5
+ld([sysArgs+5])                 #6 dabble
+st(1,[X])                       #7
+ld([vAC],X)                     #8
+ld([vAC+1],Y)                   #9
+adda([Y,X])                     #10 double
+adda([Y,X])                     #11
+st([Y,X])                       #12
+suba([sysArgs+4])               #13
+blt('ddab#16c')                 #14
+nop()                           #15
+bra('ddab#18c')                 #16
+st([Y,X])                       #17
+label('ddab#16c')
+ld(sysArgs+5,X)                 #16
+st(0,[X])                       #17
+label('ddab#18c')
+bra('NEXT')                     #18
+ld(-20/2)                       #19
+
+
+
+# ----------------------------------------
+# FILL implementation
+
+
+label('fsm22op0#17')
+st([fsmState])                  #17
+ld(hi('FSM22_ENTER'))           #18
+st([vCpuSelect])                #19
+bra('NEXT')                     #20
+ld(-22/2)                       #21
+
+# vT3=vv vT2=yyxx vAC=hhww
+# sysArgs[45]=xcnt ycnt
+
+label('fill#3a')
+ld(fsmState,X)                  #3 Peak 60 bytes/scanline
+ld([vAC+1])                     #4
+st([sysArgs+5])                 #5
+adda([vT2+1])                   #6
+bra('fill#9b')                  #7
+st('fill#3b',[X])               #8
+
+label('fill#3b')
+ld(fsmState,X)                  #3
+ld([sysArgs+5])                 #4
+suba(1)                         #5
+beq('fill#8b')                  #6 end
+st([sysArgs+5])                 #7
+ld([vT2+1])                     #8
+label('fill#9b')
+suba(1)                         #9
+st([vT2+1],Y)                   #10
+ld([vAC])                       #11
+anda(1)                         #12
+bne('fill#15b')                 #13
+xora([vAC])                     #14 [vAC]&0xfe
+st([sysArgs+4])                 #15 always even
+ld('fill#3c')                   #16
+st([fsmState])                  #17
+bra('NEXT')                     #18
+ld(-20/2)                       #19
+label('fill#15b')
+beq('fill#17b')                 #15 odd width
+st([sysArgs+4])                 #16
+st('fill#3c',[X])               #17
+adda([vT2],X)                   #18
+ld([vT3])                       #19
+st([Y,X])                       #20
+ld(-24/2)                       #21
+bra('NEXT')                     #22
+label('fill#17b')
+ld([vT2],X)                     #17 1pix wide
+ld([vT3])                       #18
+st([Y,X])                       #19
+bra('NEXT')                     #20
+ld(-22/2)                       #21
+label('fill#8b')
+ld(hi('ENTER'))                 #8  exit
+st([vCpuSelect])                #9
+adda(1,Y)                       #10
+jmp(Y,'NEXTY')                  #11
+ld(-14/2)                       #12
+
+label('fill#3c')
+ld([sysArgs+4])                 #3
+ble('fill#6c')                  #4 -> burst12
+suba(12)                        #5
+bge('fill#8c')                  #6 -> burst12
+ld(fsmState,X)                  #7
+st('fill#3b',[X])               #8 final 2,4,6,8,10
+ld([vT2],X)                     #9
+ld([sysArgs+4])                 #10
+adda(AC)                        #11
+adda(pc())                      #12
+ld([vT2+1],Y)                   #13
+bra(AC)                         #14 dispatch!
+ld([vT3])                       #15
+label('fill#16b_2')
+st([Y,Xpp])                     #16 !final 2
+st([Y,Xpp])                     #17
+bra('NEXT')                     #18
+ld(-20/2)                       #19
+label('fill#16b_4')
+nop()                           #16 !final 4
+bra(pc()+1)                     #17
+nop()                           #18,19
+bra('fill#22b_4')               #20
+label('fill#16b_6')
+nop()                           #16 !final 6
+nop()                           #17
+bra('fill#20b_6')               #18
+nop()                           #19
+label('fill#16b_8')
+bra('fill#18b_8')               #16 !final 8
+nop()                           #17
+label('fill#14b_12')
+st([Y,Xpp])                     #14 write 12
+st([Y,Xpp])                     #15
+label('fill#16b_10')
+st([Y,Xpp])                     #16 !final10
+st([Y,Xpp])                     #17
+label('fill#18b_8')
+st([Y,Xpp])                     #18
+st([Y,Xpp])                     #19
+label('fill#20b_6')
+st([Y,Xpp])                     #20
+st([Y,Xpp])                     #21
+label('fill#22b_4')
+st([Y,Xpp])                     #22
+st([Y,Xpp])                     #23
+st([Y,Xpp])                     #24
+st([Y,Xpp])                     #25
+bra('NEXT')                     #26
+ld(-28/2)                       #27
+# burst12
+label('fill#6c')
+nop()                           #6 burst12, >=128
+ld(fsmState,X)                  #7
+label('fill#8c')
+beq('fill#10c')                 #8 burst12, >=12
+ld([vT2+1],Y)                   #9
+st([sysArgs+4])                 #10 nonfinal 12
+adda([vT2],X)                   #11
+bra('fill#14b_12')              #12
+ld([vT3])                       #15
+label('fill#10c')
+st('fill#3b',[X])               #10 final 12
+adda([vT2],X)                   #11
+bra('fill#14b_12')              #12
+ld([vT3])                       #13
+
+
+
+#-----------------------------------------------------------------------
+#
+#   $2300 ROM page 35: 
+#
+#-----------------------------------------------------------------------
+
+fillers(until=0xff)
+label('FSM23_ENTER')
+bra(pc()+4)                     #0
+align(0x100, size=0x100)
+bra([fsmState])                 #1
+assert (pc() & 255) == (symbol('NEXT') & 255)
+label('FSM23_NEXT')
+adda([vTicks])                  #0
+bge([fsmState],warn=False)      #1
+st([vTicks])                    #2
+adda(maxTicks)                  #3
+bgt(pc()&255)                   #4
+suba(1)                         #5
+ld(hi('vBlankStart'),Y)         #6
+jmp(Y,[vReturn])                #7
+ld([channel])                   #8
+
+
+
+# ----------------------------------------
+# BLIT implementation
+
+# vT2 : dsty,dstx
+# vT3 : srcy,srcx
+# vAC : h,w
+
+label('blit#17')
+ld('blit#3a')                   #17
+st([fsmState])                  #18
+ld(hi('FSM23_ENTER'))           #19
+st([vCpuSelect])                #20
+adda(1,Y)                       #21 
+jmp(Y,'NEXT')                   #22 bra?
+ld(-24/2)                       #23
+
+# LAC sysArgs23 : buffer
+# sysArgs6      : nxtrow state
+# sysArgs45     : xctr yctr
+
+label('blit#3a')
+ld([vAC+1])                     #3
+st([sysArgs+5])                 #4
+ld([vAC])                       #5
+st([sysArgs+4])                 #6
+ld([vT2+1])                     #7 Simplified for h<128
+suba([vT3+1])                   #8
+beq('blit#11a')                 #9  -> dsty = srcy
+blt('blit#12a')                 #10 -> dsty < srcy
+# dsty > srcy
+nop()                           #11 
+ld([vT2+1])                     #12 backwardx backwardy
+adda([vAC+1])                   #13 
+suba(1)                         #14
+st([vT2+1])                     #15 dsty += h-1
+ld([vT3+1])                     #16
+adda([vAC+1])                   #17
+suba(1)                         #18
+st([vT3+1])                     #19 srcy += w-1
+ld('blit#3e')                   #20
+st([sysArgs+6])                 #21 use backwardy
+ld('blit#3c')                   #22
+st([fsmState])                  #23 -> backwardx
+bra('NEXT')                     #24
+ld(-26/2)                       #25
+
+# dsty < srcy
+label('blit#12a')
+ld('blit#3f')                   #12 forwardy backwardx
+st([sysArgs+6])                 #13
+ld('blit#3c')                   #14
+st([fsmState])                  #15
+bra('NEXT')                     #16
+ld(-18/2)                       #17
+# dsty == srcy
+label('blit#11a')
+ld('blit#3f')                   #11 set forwardy
+st([sysArgs+6])                 #12
+ld([vT3])                       #13
+suba([vT2])                     #14 - backwardx is possible if
+xora([vAC])                     #15      w <= srcx - dstx
+blt('blit#18a')                 #16       unsigned bytes
+xora([vAC])                     #17
+suba([vAC])                     #18 dstx-srcx-w
+blt('blit#21a-f')               #19
+ld(fsmState,X)                  #20
+label('blit#21a-b')
+st('blit#3c',[X])               #21 forwardy backwardx
+bra('NEXT')                     #22
+ld(-24/2)                       #23
+label('blit#18a')
+ld([vAC])                       #18
+bge('blit#21a-b')               #19
+ld(fsmState,X)                  #20
+label('blit#21a-f')
+st('blit#3g',[X])               #21 forwardy forwardx
+bra('NEXT')                     #22
+ld(-24/2)                       #23
+
+label('blit#3c')
+ld('blit#3d')                   #3 backwardx row
+st([fsmState])                  #4 peak 15bytes/scanline
+ld([vT3+1],Y)                   #5
+ld([sysArgs+4])                 #6
+suba(6)                         #7
+adda([vT3],X)                   #8
+ld([Y,X])                       #9
+st([Y,Xpp])                     #10
+st([sysArgs+3])                 #11
+ld([Y,X])                       #12
+st([Y,Xpp])                     #13
+st([sysArgs+2])                 #14
+ld([Y,X])                       #15
+st([Y,Xpp])                     #16
+st([vLAC+3])                    #17
+ld([Y,X])                       #18
+st([Y,Xpp])                     #19
+st([vLAC+2])                    #20
+ld([Y,X])                       #21
+st([Y,Xpp])                     #22
+st([vLAC+1])                    #23
+ld([Y,X])                       #24
+st([vLAC+0])                    #25
+bra('NEXT')                     #26
+ld(-28/2)                       #27
+
+label('blit#3d')
+ld([sysArgs+4])                 #3 backwardx row cont.
+ble('blit#6d')                  #4
+suba(6)                         #5
+bge('blit#8d')                  #6
+ld([vT2+1],Y)                   #7
+ld([sysArgs+6])                 #8 final
+st([fsmState])                  #9
+ld([sysArgs+4])                 #10  0 < len < 6
+adda(AC)                        #11
+adda(AC)                        #12
+adda(pc()-1)                    #13
+bra(AC)                         #14 dispatch!
+ld([vT2],X)                     #15
+label('blit#16d_1')
+ld([vLAC+0])                    #16 !final1
+st([Y,Xpp])                     #17
+bra('NEXT')                     #18
+ld(-20/2)                       #19
+label('blit#16d_2')
+nop()                           #16 !final2
+bra(pc()+1)                     #17
+nop()                           #18,19
+bra('blit#22d_2')               #20
+label('blit#16d_3')
+nop()                           #16 !final3
+nop()                           #17
+bra('blit#20d_3')               #18
+nop()                           #19
+label('blit#16d_4')
+bra('blit#18d_4')               #16 !final4
+nop()                           #17
+label('blit#14d_6')
+ld([sysArgs+3])                 #14
+st([Y,Xpp])                     #15
+label('blit#16d_5')
+ld([sysArgs+2])                 #16 !final5
+st([Y,Xpp])                     #17
+label('blit#18d_4')
+ld([vLAC+3])                    #18
+st([Y,Xpp])                     #19
+label('blit#20d_3')
+ld([vLAC+2])                    #20
+st([Y,Xpp])                     #21
+label('blit#22d_2')
+ld([vLAC+1])                    #22
+st([Y,Xpp])                     #23
+ld([vLAC+0])                    #24
+st([Y,Xpp])                     #25
+bra('NEXT')                     #26
+ld(-28/2)                       #27
+# burst6
+label('blit#6d')
+nop()                           #6 burst 6 >=128
+ld([vT2+1],Y)                   #7
+label('blit#8d')
+st([sysArgs+4])                 #8 burst 6
+bne('blit#11d')                 #9
+adda([vT2],X)                   #10
+ld([sysArgs+6])                 #11 - final
+bra('blit#14d_6')               #12
+st([fsmState])                  #13
+label('blit#11d')
+ld('blit#3c')                   #11 - nonfinal
+bra('blit#14d_6')               #12
+st([fsmState])                  #13
+
+label('blit#3e')
+nop()                           #3 backwardy 
+ld('blit#3c')                   #4 -> next is backwardx
+st([fsmState])                  #5 backwardy
+ld([sysArgs+5])                 #6
+suba(1)                         #7
+beq('blit#10e')                 #8
+st([sysArgs+5])                 #9
+ld([vAC])                       #10
+st([sysArgs+4])                 #11
+ld([vT2+1])                     #12
+suba(1)                         #13
+st([vT2+1])                     #14
+ld([vT3+1])                     #15
+suba(1)                         #16
+st([vT3+1])                     #17
+bra('NEXT')                     #18
+ld(-20/2)                       #19
+label('blit#10e')
+ld(hi('ENTER'))                 #10  exit
+st([vCpuSelect])                #11
+adda(1,Y)                       #12
+jmp(Y,'NEXTY')                  #13
+ld(-16/2)                       #14
+
+label('blit#3f')
+nop()                           #3 forwardy
+ld('blit#3c')                   #4 -> next is backwardx
+label('blit#5f')
+st([fsmState])                  #5 forwardy
+ld([sysArgs+5])                 #6
+suba(1)                         #7
+beq('blit#10f')                 #8
+st([sysArgs+5])                 #9
+ld([vAC])                       #10
+st([sysArgs+4])                 #11
+ld([vT2+1])                     #12
+adda(1)                         #13
+st([vT2+1])                     #14
+ld([vT3+1])                     #15
+adda(1)                         #16
+st([vT3+1])                     #17
+bra('NEXT')                     #18
+ld(-20/2)                       #19
+label('blit#10f')
+ld([vT2+1])                     #10 restore srcy,dsty
+suba([vAC+1])                   #11
+adda(1)                         #12
+st([vT2+1])                     #13
+ld([vT3+1])                     #14
+suba([vAC+1])                   #15
+adda(1)                         #16
+st([vT3+1])                     #17
+ld(hi('ENTER'))                 #18  exit
+st([vCpuSelect])                #19
+adda(1,Y)                       #20
+jmp(Y,'NEXTY')                  #21
+ld(-24/2)                       #22
+
+label('blit#3g')
+ld([vAC])                       #3 forwardx row
+suba([sysArgs+4])               #4 peak 6 bytes/scanline
+adda([vT2])                     #5
+st([vTmp])                      #6
+suba([vT2])                     #7
+adda([vT3],X)                   #8
+ld([vT3+1],Y)                   #9
+ld([Y,X])                       #10
+ld([vTmp],X)                    #11
+ld([vT2+1],Y)                   #12
+st([Y,X])                       #13
+ld([sysArgs+4])                 #14
+suba(1)                         #15
+beq('blit#18g')                 #16
+st([sysArgs+4])                 #17
+bne('NEXT')                     #18
+ld(-20/2)                       #19
+label('blit#18g')
+ld('blit#3h')                   #18
+st([fsmState])                  #19
+bra('NEXT')                     #20
+ld(-22/2)                       #21
+
+label('blit#3h')
+bra('blit#5f')                  #3 forwardy forwardx
+ld('blit#3g')                   #4 slower!
 
 
 #-----------------------------------------------------------------------

@@ -116,7 +116,7 @@ modifying the stack opcodes to allow them to cross page boundaries
 when `vSPH` is nonzero.
 
 
-### Long conditional branches
+### Conditional branches
 
 Recall how the vCPU5 conditional branches `BEQ`, `BNE`, `BLT`, `BGT`,
 `BLE`, and `BGE`, are encoded with a prefix byte `Bcc=0x35`, a
@@ -132,6 +132,9 @@ encoded as two bytes LL and HH. The target address is `(HH*256)+((LL+2)&256)`.
 The Jcc opcodes use the same space as the traditional `Bcc` opcodes.
 JLT, JGE, and JGT are always faster than their Bcc counterparts.
 
+An additional opcode `DBNE` is convenient for writing small
+assembly code loops that iterate a predefined number of times. 
+
 | Opcode | Encoding   |  Cycles   | Notes
 | ------ | ---------- | --------- | -------
 | `JEQ`  | `3f LL HH` |    24/26  | Jump if `vAC==0`
@@ -140,6 +143,7 @@ JLT, JGE, and JGT are always faster than their Bcc counterparts.
 | `JGE`  | `53 LL HH` |    22/24  | Jump if `vAC>=0`
 | `JGT`  | `4d LL HH` | 22-24/26  | Jump if `vAC>0`
 | `JLE`  | `56 LL HH` | 22-24/26  | Jump if `vAC<=0`
+| `DBNE` | `7a VV LL` |    24/26  | Decrement byte [VV], jump if nonzero
 
 **History:**:
 Long conditional branches appeared in ROMvX0 around 2020.
@@ -201,16 +205,21 @@ without changing the contents of the accumulator `vAC`.
 | MOVIW  | `b1 VV HH LL` | 30 | Store immediate `HHLL` into word `VV..VV+1`
 | MOVW   | `bc YY XX`    | 36 | Copy word from `XX..XX+1` to `YY..YY+1`<br>(trashes `sysArgs7`)
 | INCV   | `70 VV`       | 22 to 26 | Add 1 to word `VV..VV+1`
+| NEGV   | `18 VV`       | 26 | Negates word `VV..VV+1`
+| ADDSV  | `c6 VV II`    | 30 to 56 | Add signed immediate `II` to word `VV..VV+1`
 | ADDV   | `66 VV`       | 30 | Add `vAC` contents to word `VV..VV+1`
 | SUBV   | `68 VV`       | 30 | Subtract `vAC` contents from word `VV..VV+1`
-| ADDIV  | `35 7d II VV` | 38 to 40 | Add immediate `II` to word `VV..VV+1`
-| SUBIV  | `35 9c II VV` | 38 to 40 | Subtract immediate `II` from word `VV..VV+1`
-| NEGV   | `18 VV`       | 26 | Negates word `VV..VV+1`
 
-**History:**
-Many of these instructions were discusssed in
+Opcode `ADDSV` takes a signed byte as immediate argument and generally
+runs in 30 cycles but incurs a penalty of 24/26 cycles when the
+addition crosses a half-page boundary and possibly involves a carry.
+Compared to alternatives such as `LDI;ADDV(VV)`, the amortized cost of
+this penalty, about `|II|/5`, makes this opcode when `|II|` is smaller
+than 80 or when the contents of `vAC` must be preserved.
+
+**History:** Many of these instructions were discusssed in
 (https://forum.gigatron.io/viewtopic.php?p=2053#p2053). The very
-compact and useful implementation of `ADDV` and `SUBV` is new.
+compact and useful implementation of `ADDV`, `SUBV`, and `ADDSV` are new.
 
 
 ### Comparison instructions
@@ -235,21 +244,16 @@ considered desirable but had not been realized in just 30 cycles before.
 
 ### Miscellaneous
 
-Instructions `LDNI` and `LDSB` can be used to load a signed byte into `vAC`.
+Instruction `LDSB` can be used to load a signed byte into `vAC`.
 Instruction `ADDHI` adds a byte constant to `vACH` and can be
 used before `ADDI` to add word constant to `vAC`.
 
 | Opcode | Encoding | Cycles | Function
 | ------ | -------- | -------| -------
-| LDNI   | `78 II`      | 16 | Load negative immediate `0xffII` into `vAC`
 | LDSB   | `6e VV`      | 24 | Load sign extended byte at address `VV` into `vAC`
 | ADDHI  | `33 II`      | 16 | Add byte `0xII` to the high accumulator byte `vACH`.
 
-**History:**
-A variant of `LDNI` exists in ROMvX0 but negates its argument (slower)
-instead of using a 2-complements approach. In order to make it as fast
-as possible, this is entirely implemented in page 3 just like `LDI`
-and `LDWI`.
+
 
 
 
@@ -399,13 +403,13 @@ for conditional jump opcodes.
 
 | Opcode |  Encoding  | Cycles      | Function
 | ------ | ---------- | ----------- | -------
-| LDLAC  | `35 1e`    | 38          | Load long `[vAC]..[vAC]+3` into long accumulator `vLAC`
-| STLAC  | `35 20`    | 38          | Store long accumulator `vLAC` into `[vAC]..[vAC]+3`
+| LDLAC  | `35 1e`    | 36          | Load long `[vAC]..[vAC]+3` into long accumulator `vLAC`
+| STLAC  | `35 20`    | 34          | Store long accumulator `vLAC` into `[vAC]..[vAC]+3`
 | MOVL   | `35 db YY XX` | 30+30    | Copy long from `XX..XX+3` to `YY..YY+3`<br>(trashes `sysArgs[0-7]`)
 | LEEKA  | `35 32 XX` | 28+34       | Copy long from `[vAC]..[vAC]+3` to `XX..XX+3`<br>(trashes `sysArgs[2-7]`)
 | LOKEA  | `35 34 XX` | 28+34       | Copy long from `XX.XX+3` to `[vAC]..[vAC]+3`<br>(trashes `sysArgs[2-7]`)
-| ADDL   | `35 00`    | 22+30+28    | Add long `[vAC]..[vAC]+3` to long accumulator `vLAC`<br>(trashes `sysArgs[5-7]`)
-| SUBL   | `35 04`    | 22+28+28    | Subtract long `[vAC]..[vAC]+3` from long accumulator `vLAC`<br>(trashes `sysArgs[5-7]`)
+| ADDL   | `35 00`    | 22+30+28    | Add long `[vAC]..[vAC]+3` to long accumulator `vLAC`<br>(trashes `sysArgs[6-7]`)
+| SUBL   | `35 04`    | 22+28+28    | Subtract long `[vAC]..[vAC]+3` from long accumulator `vLAC`<br>(trashes `sysArgs[6-7]`)
 | ANDL   | `35 06`    | 22+28       | Bitwise and of `[vAC]..[vAC]+3` with long accumulator `vLAC`<br>(trashes `sysArgs7`)
 | ORL    | `35 08`    | 22+28       | Bitwise or of `[vAC]..[vAC]+3` with long accumulator `vLAC`<br>(trashes `sysArgs7`)
 | XORL   | `35 0a`    | 22+28       | Bitwise xor of `[vAC]..[vAC]+3` with long accumulator `vLAC`<br>(trashes `sysArgs7`)
@@ -420,7 +424,8 @@ or `vLAC`.
 | Opcode |  Encoding  | Cycles     | Function
 | ------ | ---------- | ---------- | -------
 | INCVL  | `35 23 VV` | 22+16..26  | Increment long `VV..VV+3`<br>(trashes `sysArgs[67]`)
-| NEGVL  | `35 0c VV` | 28+24      | Negates long `VV..VV+3`<br>(trashes `sysArgs[67]`)
+| NEGVL  | `35 0c VV` | 28+24      | Negate long `VV..VV+3`<br>(trashes `sysArgs[67]`)
+| NOTVL  | `35 d3 VV` | 28+24      | Complement long `VV..VV+3`<br>(trashes `sysArgs[67]`)
 | LSLVL  | `35 10 VV` | 28+30      | Left shift long  `VV..VV+3`<br>(trashes `sysArgs[67]`)
 
 **History:**
@@ -434,7 +439,6 @@ but severe overhead of long monolithic instructions.
 
 A couple instruction operate on the extended 40 bits accumulator `vLAX`
 whose upper 32 bits overlate the long accumulator `vLAC`.
-
 
 | Opcode | Encoding      | Cycles     | Function
 | ------ | ----------    | ---------- | -------
@@ -499,11 +503,11 @@ the full virtual interpreter context. A third instruction `EXCH` is
 useful to atomically read-modify-write.
 
 
-|  Opcode  | Encoding | Cycles  | Function
-| -------- | -------- | ------- | -------
-| VSAVE    | `35 2b`  | ~104    | save full vCPU context into xxe0-xxff
-| VRESTORE | `35 2d`  | ~126    | restore vCPU context saved in xxe0-xxff
-| EXCH     | `35 2f`  |   30    | atomically exchange bytes vACL and [vT2]
+|  Opcode  | Encoding    | Cycles  | Function
+| -------- | ----------- | ------- | -------
+| VSAVE    | `35 2b`     | ~104    | save full vCPU context into xxe0-xxff
+| VRESTORE | `35 2d`     | ~126    | restore vCPU context saved in xxe0-xxff
+| EXBA     | `35 31 ii`  |  28+18  | perform ii->[vAC]->vAC atomically
 
 Both `VSAVE` and `VRESTORE` take a page number `xx` in the low byte of
 register `vAC` and use address range `xxe0-xxff` to save or restore
@@ -589,18 +593,18 @@ c0.c1
  C0: xx xx
 ```
 
-Instruction `EXCH` exchanges the low accumulator byte `vACL` with the
-byte located at the address contained in register `vT2`. This is useful
-because it reads and writes a memory byte while making sure that no
-virtual interrupt occurs between the read and the write. For instance
-one can reset `frameCount` without losing a tick as follows:
+Instruction `EXBA` atomically sets the byte addressed by `vAC` to its
+immediate argument while saving its previous values ito `vAC`.  This
+is useful because the two operations happen without intervening
+virtual interrupts. For instance one can reset `frameCount` without
+losing a tick as follows:
 ```
-   MOVQW('frameCount`, vT2); LDI(0); EXCH()     # read and reset framecount
+   LDI('frameCount`); EXBA(0)                   # read and reset framecount
    STW(LAC);MOVQW(0,LAC+2)                      # copy old framecount into LAC
    LDWI('clock');ADDL();STLAC()                 # add it to the long var 'clock'
 ```
 Instructions `VSAVE` and `VRESTORE` can also be used to organize
-multiple execution threads. Instruction `EXCH` can then be used for
+multiple execution threads. Instruction `EXBA` can then be used for
 thread synchronization.
 
 
@@ -629,15 +633,16 @@ whose implementation uses `vTmp`.
 
 Some private system variables have also been changed to make space for
 two critical variables used by `dev128k7.rom` to separate the memory
-bank used for video output and the memory bank seen by the vCPU,
-which was the project that started the whole DEV7ROM adventure.
-The third byte of the entropy counter has been moved to address 0x1f2 and
-the led timer has been moved to address 0x1f4. Their former locations
-are now used to cache the control bits that should be used during
-video generation and during vcpu execution. Although overwriting these
-variables can crash the Gigatron, short of a bug, legacy programs are
-unlikely to write to these locations because anything written there
-used to be quickly overwritten by the gigatron firmware.
+bank used for video output and the memory bank seen by the vCPU, which
+was the project that started the whole DEV7ROM adventure.  The led
+timer has been moved to address 0x1f4, and, on `dev128k7.rom`, the
+third byte of the entropy counter has been moved to address 0x1f2.
+Their former locations are now used to cache the control bits that
+should be used during video generation and during vcpu
+execution. Although overwriting these variables can crash the
+Gigatron, short of a bug, legacy programs are unlikely to write to
+these locations because anything written there used to be quickly
+overwritten by the gigatron firmware.
 
 Except for `ledTempo` discussed above, all other public system
 variables documented in `interface.json` remain at the same location

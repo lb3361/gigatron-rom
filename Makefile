@@ -57,7 +57,7 @@ dev7.rom: Core/* Apps/*/* Makefile interface.json
 		packedPictures=Apps/Pictures/packedPictures.rgb\
 		Pictures=Apps/Pictures/Pictures_v3.gcl\
 		${DEV7APPS}\
-		Boot=Apps/CardBoot/CardBoot.gt1z\
+		Boot=Apps/CardBoot/CardBoot_v2.gt1z\
 		Main=Apps/MainMenu/MainMenu.gcl\
 		Reset=Core/Reset.gcl
 
