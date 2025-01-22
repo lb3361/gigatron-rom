@@ -45,7 +45,7 @@ export class Spi {
      * @param {Gigatron} cpu
      * @param {Object} options
      */
-    constructor(cpu, id) {
+    constructor(cpu, id, label) {
         this.cpu = cpu
         /* spi stuff */
         this.cs = (id >=0 && id < 4) ? (4 << id) : 0;
@@ -63,6 +63,7 @@ export class Spi {
         this.len = 0;
         this.offset = 0;
         this.serial = 0;
+        this.label = label;
     }
 
     /** Advance spi simulation by one tick */
@@ -95,6 +96,17 @@ export class Spi {
         }
     }
 
+    setvhdlabel() {
+        if (! this.label) {
+            /* nothing */
+        } else if (this.vhdlen <= 0) {
+            this.label.text('Spi: no card');
+        } else {
+            let sz = this.vhdlen / 1024 / 1024;
+            this.label.text(`Spi: ${sz}M card`);
+        }
+     }
+
     loadvhdurl(url) {
         let req = new XMLHttpRequest();
         req.open('GET', url);
@@ -107,6 +119,7 @@ export class Spi {
                     this.vhd = vhd;
                     this.vhdlen = vhd.length;
                     this.serial += 1;
+                    this.setvhdlabel();
                 }
             }
         };
@@ -120,10 +133,11 @@ export class Spi {
         let reader = new FileReader();
         reader.onload = (event) => {
             let vhd = new Uint8Array(reader.result);
-            if (vhd.length > 0) {
+            if (vhd.length >= 0) {
                 this.vhd = vhd;
                 this.vhdlen = vhd.length;
                 this.serial += 1;
+                this.setvhdlabel();
             }
         };
         reader.onerror = (event) => {
