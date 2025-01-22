@@ -35,7 +35,7 @@ $(function() {
     let volumeSlider = $('#volume-slider');
     let vgaCanvas = $('#vga-canvas');
     let loadFileInput = $('#load-file-input');
-    let loadVhdInput = $('#load-vhd-input');
+    let vhdLabel = $('#vhd-status');
 
     /** Trigger a keydown/keyup event in response to a mousedown/mouseup event
      * @param {JQuery} $button
@@ -169,7 +169,7 @@ $(function() {
 
     let loader = new Loader(cpu);
 
-    let spi = new Spi(cpu, 0);
+    let spi = new Spi(cpu, 0, vhdLabel);
     spi.loadvhdurl('./sd.vhd');
 
     muteButton.click(function() {
@@ -221,22 +221,16 @@ $(function() {
             let target = event.target;
             if (target.files.length != 0) {
                 let file = target.files[0];
-                loadGt1(file);
+                let name = file.name.toLowerCase()
+                if (name.endsWith('.rom')) {
+                    loadRomFile(file)
+                } else if (name.endsWith('.vhd')) {
+                    spi.loadvhdfile(file);
+                } else {
+                    loadGt1(file);
+                }
             }
         });
-
-    loadVhdInput
-        .on('click', (event) => {
-            loadVhdInput.closest('form').get(0).reset();
-        })
-        .on('change', (event) => {
-            let target = event.target;
-            if (target.files.length != 0) {
-                let file = target.files[0];
-                spi.loadvhdfile(file);
-            }
-        });
-
     
     $(document)
         .on('dragenter', (event) => {
@@ -256,11 +250,15 @@ $(function() {
                 if (files.length != 0) {
                     event.preventDefault();
                     event.stopPropagation();
-                    let fn = files[0].name.toLowerCase()
-                    if (fn.endsWith('.gt1')) {
-                        loadGt1(files[0])
-                    } else if (fn.endsWith('.vhd') || fn.endsWith('.img')) {
-                        spi.loadvhdfile(files[0])
+                    let file = files[0];
+                    let name = file.name.toLowerCase()
+                    if (name.endsWith('.rom')) {
+                        loadRomFile(file);
+                    } else if (name.endsWith('.vhd')) {
+                        spi.loadvhdfile(file);
+                        setVhdLabel();
+                    } else {
+                        loadGt1(file);
                     }
                 }
             }
@@ -314,9 +312,27 @@ $(function() {
         gamepad.stop();
     }
 
-    /** load the ROM image
-     * @param {string} url
-     */
+    /** load a ROM image from file */
+    function loadRomFile(file) {
+        let reader = new FileReader();
+        reader.onload = (event) => {
+            let wordCount = reader.result.byteLength >> 1;
+            if (wordCount > 0) {
+                let dataView = new DataView(reader.result);
+                for (let wordIndex = 0; wordIndex < wordCount; wordIndex++) {
+                    cpu.rom[wordIndex] = dataView.getUint16(2 * wordIndex);
+                }
+                cpu.pc = 0;
+                cpu.nextpc = (cpu.pc + 1) & cpu.romMask;
+            }
+        }
+        reader.onerror = (event) => {
+            console.log("error while reading rom from", file);
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    /** load the ROM image from url */
     function loadRom(url) {
         var req = new XMLHttpRequest();
         req.open('GET', url);
