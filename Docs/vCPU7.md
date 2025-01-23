@@ -495,6 +495,30 @@ its mantissa in `sysArgs[0..4]` and its exponent in the low byte of `vT2`.
 Bit 0 of `vFAS` then indicates whether this number has a sign different
 from the number loaded by `LDFAC` which is stored in bit 7 of `vFAS`.
 
+### Graphics
+
+Two opcodes, `FILL` and `BLIT` are useful for creating graphics.
+
+| Opcode | Encoding | Cycles | Function
+| ------ | -------- | ------ | ----
+| FILL   | `35 4a`  | max `36+h*(24+ceil(w/12)*28)` | Fill a rectangular area<br>(trashes sysArgs[4-7])
+| BLIT   | `35 48`  | max `72+h*(20+ceil(w/6)*56)`  | Copy a rectangular area<br>(trashes sysArgs[0-7], vLAC)
+
+Both opcodes see the Gigatron memory as a 256x256 array of bytes, with both rows
+and columns wrapping around, and operate on subarrays of this array, 
+defined by a range of rows (y coordinates) and a range of columns (x coordinates).
+Depending on the contents of the video table, the screen buffer can also be set up 
+as a subarray defined by a range of rows and a range of columns. 
+
+Both opcodes change the contents of a destination subarray whose top-left corner 
+is provided  in register `vT2`, y coordinate in the high byte, x coordinate in the low byte,
+and whose size is provided by register `vAC`, height im the high byte, and width in the low byte.
+A width or height of 0 means 256.
+
+* Opcode `FILL` writes the low byte of register `vT3` into all bytes in the destination subarray. This is useful to clear the screen or display filled rectangles. The peak speed of 60 bytes per scanline is achieved when the destination width is a multiple of 12. It takes 28 cycles to fill 12 consecutive bytes in a row. Excess bytes typically take another chunk of 28 cycles. A special mode saves time for vertical lines, that is, width 1.
+
+* Opcode `BLIT` copies an equally sized source subarray into the destination subarray. Register `vT3` describes the coordinates of the top-left corner of the source subarray, y coordinate in the high byte, and x coordinate in the low byte. The peak speed of 15 bytes per scanline is achieved when the width is a multiple of 6. When the subarray height is less than 128, the copy operation is ordered to ensure that it does not overwrite source bytes before using them. However this fails when both subarrays have identical y coordinate and a width of 256. 
+
 
 ### Context and interrupts
 
