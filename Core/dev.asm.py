@@ -11310,66 +11310,49 @@ ld(-22/2)                       #21
 # sysArgs[45]=xcnt ycnt
 
 label('fill#3a')
-ld(fsmState,X)                  #3 Peak 60 bytes/scanline
-ld([vAC+1])                     #4
-st([sysArgs+5])                 #5
-adda([vT2+1])                   #6
-bra('fill#9b')                  #7
-st('fill#3b',[X])               #8
-
-label('fill#3b')
-ld(fsmState,X)                  #3
-ld([sysArgs+5])                 #4
-suba(1)                         #5
-beq('fill#8b')                  #6 end
-st([sysArgs+5])                 #7
-ld([vT2+1])                     #8
-label('fill#9b')
-suba(1)                         #9
-st([vT2+1],Y)                   #10
-ld([vAC])                       #11
-anda(1)                         #12
-bne('fill#15b')                 #13
-xora([vAC])                     #14 [vAC]&0xfe
-st([sysArgs+4])                 #15 always even
-ld('fill#3c')                   #16
-st([fsmState])                  #17
+ld(fsmState,X)                  #3  Peak 60 bytes/scanline
+st('fill#3d',[X])               #4
+ld('fill#3c')                   #5
+st([sysArgs+6])                 #6
+ld([vAC+1])                     #7
+st([sysArgs+5])                 #8
+adda([vT2+1])                   #9
+label('fill#10a')
+suba(1)                         #10
+st([vT2+1],Y)                   #11
+ld([vAC])                       #12
+anda(1)                         #13
+beq('fill#16a')                 #14 -> even width
+xora([vAC])                     #15
+beq('fill#18a')                 #16 -> vline
+st([sysArgs+4])                 #17
+st('fill#3b',[X])               #18 odd w
+adda([vT2],X)                   #19
+ld([vT3])                       #20
+st([Y,X])                       #21
+bra('NEXT')                     #22
+ld(-24/2)                       #23
+label('fill#16a')
+st([sysArgs+4])                 #16 even w
+st('fill#3b',[X])               #17
 bra('NEXT')                     #18
 ld(-20/2)                       #19
-label('fill#15b')
-beq('fill#17b')                 #15 odd width
-st([sysArgs+4])                 #16
-st('fill#3c',[X])               #17
-adda([vT2],X)                   #18
-ld([vT3])                       #19
-st([Y,X])                       #20
-ld(-24/2)                       #21
-bra('NEXT')                     #22
-label('fill#17b')
-ld([vT2],X)                     #17 1pix wide
-ld([vT3])                       #18
-st([Y,X])                       #19
-bra('NEXT')                     #20
-ld(-22/2)                       #21
-label('fill#8b')
-ld(hi('ENTER'))                 #8  exit
-st([vCpuSelect])                #9
-adda(1,Y)                       #10
-jmp(Y,'NEXTY')                  #11
-ld(-14/2)                       #12
+label('fill#18a')
+bra('NEXT')                     #18 vline
+ld(-20/2)                       #19
 
-label('fill#3c')
-ld([sysArgs+4])                 #3
-ble('fill#6c')                  #4 -> burst12
+label('fill#3b')
+ld([sysArgs+4])                 #3 
+ble('fill#6b')                  #4 -> burst12
 suba(12)                        #5
-bge('fill#8c')                  #6 -> burst12
-ld(fsmState,X)                  #7
-st('fill#3b',[X])               #8 final 2,4,6,8,10
-ld([vT2],X)                     #9
+bge('fill#8b')                  #6 -> burst12
+ld([vT2+1],Y)                   #7
+ld([sysArgs+6])                 #8 final 2,4,6,8,10
+st([fsmState])                  #9
 ld([sysArgs+4])                 #10
 adda(AC)                        #11
 adda(pc())                      #12
-ld([vT2+1],Y)                   #13
+ld([vT2],X)                     #13
 bra(AC)                         #14 dispatch!
 ld([vT3])                       #15
 label('fill#16b_2')
@@ -11409,22 +11392,85 @@ st([Y,Xpp])                     #24
 st([Y,Xpp])                     #25
 bra('NEXT')                     #26
 ld(-28/2)                       #27
-# burst12
-label('fill#6c')
-nop()                           #6 burst12, >=128
-ld(fsmState,X)                  #7
-label('fill#8c')
-beq('fill#10c')                 #8 burst12, >=12
-ld([vT2+1],Y)                   #9
-st([sysArgs+4])                 #10 nonfinal 12
-adda([vT2],X)                   #11
-bra('fill#14b_12')              #12
-ld([vT3])                       #15
-label('fill#10c')
-st('fill#3b',[X])               #10 final 12
-adda([vT2],X)                   #11
+label('fill#6b')
+nop()                           #6
+ld([vT2+1],Y)                   #7
+label('fill#8b')
+beq('fill#10b')                 #8 burst12, >=12
+adda([vT2],X)                   #9
+bra('fill#12b')                 #10 nonfinal 12
+st([sysArgs+4])                 #11
+label('fill#10b')
+ld([sysArgs+6])                 #10 final 12
+st([fsmState])                  #11
+label('fill#12b')
 bra('fill#14b_12')              #12
 ld([vT3])                       #13
+
+label('fill#3c')
+ld(fsmState,X)                  #3 next row
+ld([sysArgs+5])                 #4
+suba(1)                         #5
+beq('fill#8c')                  #6
+st([sysArgs+5])                 #7
+bra('fill#10a')                 #8
+ld([vT2+1])                     #9
+label('fill#8c')
+ld(hi('ENTER'))                 #8  exit
+st([vCpuSelect])                #9
+adda(1,Y)                       #10
+jmp(Y,'NEXTY')                  #11
+ld(-14/2)                       #12
+
+label('fill#3d')
+ld([sysArgs+5])                 #3 vertical line
+blt('fill#6d')                  #4
+suba(4)                         #5
+bgt('fill#8d')                  #6
+ld([vT2],X)                     #7 
+ld([vT2+1],Y)                   #8 <= 4 left
+adda(3)                         #9
+st([sysArgs+5])                 #10
+ld([vT3])                       #11
+st([Y,X])                       #12
+ld([sysArgs+5])                 #13
+beq('fill#16d')                 #14 -> exit
+ld([vT2+1])                     #15
+suba(1)                         #16
+st([vT2+1])                     #17
+bra('NEXT')                     #18
+ld(-20/2)                       #19
+label('fill#16d')
+ld(hi('ENTER'))                 #16  exit
+st([vCpuSelect])                #17
+adda(1,Y)                       #18
+jmp(Y,'NEXTY')                  #19
+ld(-22/2)                       #20
+label('fill#6d')
+nop()                           #6 >= 128 left
+ld([vT2],X)                     #7
+label('fill#8d')
+st([sysArgs+5])                 #8 > 4 left
+ld([vT2+1],Y)                   #9
+ld([vT3])                       #10
+st([Y,X])                       #11
+ld([vT2+1])                     #12
+suba(1,Y)                       #13
+ld([vT3])                       #14
+st([Y,X])                       #15
+ld([vT2+1])                     #16
+suba(2,Y)                       #17
+ld([vT3])                       #18
+st([Y,X])                       #19
+ld([vT2+1])                     #20
+suba(3,Y)                       #21
+suba(4)                         #22
+st([vT2+1])                     #23
+ld([vT3])                       #24
+st([Y,X])                       #25
+bra('NEXT')                     #26
+ld(-28/2)                       #27
+
 
 
 
@@ -11686,28 +11732,56 @@ jmp(Y,'NEXTY')                  #21
 ld(-24/2)                       #22
 
 label('blit#3g')
-ld([vAC])                       #3 forwardx row
-suba([sysArgs+4])               #4 peak 6 bytes/scanline
-adda([vT2])                     #5
-st([vTmp])                      #6
-suba([vT2])                     #7
-adda([vT3],X)                   #8
-ld([vT3+1],Y)                   #9
+ld([sysArgs+4])                 #3 forwardx same row
+anda(1)                         #4 peak 10bytes/scanline
+bne('blit#7g')                  #5
+ld([vT3+1],Y)                   #6
+ld([vAC])                       #7
+suba([sysArgs+4])               #8
+adda([vT3],X)                   #9
 ld([Y,X])                       #10
-ld([vTmp],X)                    #11
-ld([vT2+1],Y)                   #12
-st([Y,X])                       #13
-ld([sysArgs+4])                 #14
-suba(1)                         #15
-beq('blit#18g')                 #16
-st([sysArgs+4])                 #17
-bne('NEXT')                     #18
-ld(-20/2)                       #19
-label('blit#18g')
-ld('blit#3h')                   #18
-st([fsmState])                  #19
-bra('NEXT')                     #20
+st([sysArgs+2])                 #11
+st([Y,Xpp])                     #12
+ld([Y,X])                       #13
+st([sysArgs+3])                 #14
+ld([vAC])                       #15
+suba([sysArgs+4])               #16
+adda([vT2],X)                   #17
+ld([sysArgs+2])                 #18
+st([Y,Xpp])                     #19
+ld([sysArgs+3])                 #20
+st([Y,Xpp])                     #21
+ld([sysArgs+4])                 #22
+suba(2)                         #23
+beq('blit#26g')                 #24
+st([sysArgs+4])                 #25
+bra('NEXT')                     #26
+ld(-28/2)                       #27
+label('blit#26g')
+ld('blit#3h')                   #26
+st([fsmState])                  #27
+bra('NEXT')                     #28
+ld(-30/2)                       #29
+label('blit#7g')
+ld([vAC])                       #7
+suba([sysArgs+4])               #8
+adda([vT3],X)                   #9
+ld([Y,X])                       #10
+st([sysArgs+2])                 #11
+ld([vAC])                       #12
+suba([sysArgs+4])               #13
+adda([vT2],X)                   #14
+ld([sysArgs+2])                 #15
+st([Y,Xpp])                     #16
+ld([sysArgs+4])                 #17
+suba(1)                         #18
+st([sysArgs+4])                 #19
+bne('NEXT')                     #20
 ld(-22/2)                       #21
+ld('blit#3h')                   #22
+st([fsmState])                  #23
+bra('NEXT')                     #24
+ld(-26/2)                       #25
 
 label('blit#3h')
 bra('blit#5f')                  #3 forwardy forwardx
