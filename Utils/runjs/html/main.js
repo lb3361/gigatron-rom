@@ -35,7 +35,9 @@ $(function() {
     let volumeSlider = $('#volume-slider');
     let vgaCanvas = $('#vga-canvas');
     let loadFileInput = $('#load-file-input');
-    let vhdLabel = $('#vhd-status');
+    let vhdLabel = $('#vhd-label');
+    let mountButton = $('#mount');
+    let unmountButton = $('#unmount');    
 
     /** Trigger a keydown/keyup event in response to a mousedown/mouseup event
      * @param {JQuery} $button
@@ -169,7 +171,7 @@ $(function() {
 
     let loader = new Loader(cpu);
 
-    let spi = new Spi(cpu, 0, vhdLabel);
+    let spi = new Spi(cpu, 0);
     spi.loadvhdurl('./sd.vhd');
 
     muteButton.click(function() {
@@ -182,6 +184,17 @@ $(function() {
         $([muteButton, unmuteButton]).toggleClass('d-none');
     });
 
+    mountButton.click(function() {
+        spi.vhdmounted = true;
+        spi.setvhdlabel();
+    });
+
+    unmountButton.click(function() {
+        spi.vhdmounted = false;
+        spi.setvhdlabel();
+    });
+
+    
     volumeSlider.val(100 * audio.volume);
     volumeSlider.on('input', function(event) {
         let target = event.target;
@@ -213,6 +226,27 @@ $(function() {
             });
     }
 
+    function loadRomFile(file) {
+        gamepad.stop();
+        spi.stop();
+        loader.loadRom(file)
+            .pipe(finalize(() => {
+                gamepad.start();
+                spi.start();
+            }))
+            .subscribe({
+                error: (error) => showError($(`\
+                <p>\
+                    Could not load ROM from <code>${file.name}</code>\
+                </p>\
+                <hr>\
+                <p class="alert alert-danger">\
+                    <span class="oi oi-warning"></span> ${error.message}\
+                </p>`)),
+            });
+    }        
+
+    
     loadFileInput
         .on('click', (event) => {
             loadFileInput.closest('form').get(0).reset();
@@ -310,26 +344,6 @@ $(function() {
     function stopRunLoop() { // eslint-disable-line
         clearTimeout(timer);
         gamepad.stop();
-    }
-
-    /** load a ROM image from file */
-    function loadRomFile(file) {
-        let reader = new FileReader();
-        reader.onload = (event) => {
-            let wordCount = reader.result.byteLength >> 1;
-            if (wordCount > 0) {
-                let dataView = new DataView(reader.result);
-                for (let wordIndex = 0; wordIndex < wordCount; wordIndex++) {
-                    cpu.rom[wordIndex] = dataView.getUint16(2 * wordIndex);
-                }
-                cpu.pc = 0;
-                cpu.nextpc = (cpu.pc + 1) & cpu.romMask;
-            }
-        }
-        reader.onerror = (event) => {
-            console.log("error while reading rom from", file);
-        };
-        reader.readAsArrayBuffer(file);
     }
 
     /** load the ROM image from url */
