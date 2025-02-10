@@ -101,12 +101,12 @@ def scope():
         LDW(R9);CALLI('_cons_set_bank_even')
         LDW(R8);LSLW();LSLW();ADDW(R8);ADDW(R13)
         STW(R13);LUP(0);ST('sysArgs2');SYS(134);INC('sysArgs4')
-        LDI(2);ADDW(R13);LUP(0);ST('sysArgs2');SYS(134);INC('sysArgs4')
-        LDI(4);ADDW(R13);LUP(0);ST('sysArgs2');SYS(134)
+        LDW(R13);LUP(2);ST('sysArgs2');SYS(134);INC('sysArgs4')
+        LDW(R13);LUP(4);ST('sysArgs2');SYS(134)
         LDW('sysArgs4');SUBI(2);STW('sysArgs4')
         LDW(R9);CALLI('_cons_set_bank_odd');
-        LDI(1);ADDW(R13);LUP(0);ST('sysArgs2');SYS(134);INC('sysArgs4')
-        LDI(3);ADDW(R13);LUP(0);ST('sysArgs2');SYS(134);INC('sysArgs4')
+        LDW(R13);LUP(1);ST('sysArgs2');SYS(134);INC('sysArgs4')
+        LDW(R13);LUP(3);ST('sysArgs2');SYS(134);INC('sysArgs4')
         LDI(0);ST('sysArgs2');SYS(134)
         CALLI('_cons_restore_saved_bank')
         tryhop(2);POP();RET()
@@ -123,7 +123,7 @@ def scope():
                   ('PLACE', '_printonechar', 0x0200, 0x7fff) ] )
 
     
-    # -- void _console_clear(char *addr, char clr, int nl)
+    # -- void _console_clear(char *addr, char clr, char nl)
     #
     # Clears from addr to the end of line with color clr.
     # Repeats for nl successive lines.
@@ -148,8 +148,11 @@ def scope():
         SYS(54)
         # loop
         INC(R8+1)
-        LDW(R10);SUBI(1);STW(R10);
-        _BNE('.loop')
+        if args.cpu >= 6:
+            DBNE(R10,'.loop')
+        else:
+            LDW(R10);SUBI(1);STW(R10);
+            _BNE('.loop')
         CALLI('_cons_restore_saved_bank')
         tryhop(2);POP();RET()
 
