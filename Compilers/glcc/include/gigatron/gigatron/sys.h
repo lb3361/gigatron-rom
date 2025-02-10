@@ -2,6 +2,7 @@
 #define __GIGATRON_SYS
 
 #include <gigatron/pragma.h>
+#include <gigatron/idioms.h>
 
 /* ---- Well known constants from interface.json ---- */
 
@@ -138,15 +139,28 @@ extern channel_t *channel(int c);      /* c in range 1...4           */
 /* All stubs are in gigatron/libc/gigatron.s */
 
 /* -- SYS_Lup -- */
+/* Not a sys call but a stub for the LUP opcode */
 extern int SYS_Lup(unsigned int addr);
 #define has_SYS_Lup() 1
+
+/* -- SYS_Fill -- */
+/* Not a sys call but a stub for the FILL opcode */
+extern int SYS_Fill(unsigned int yyxx, char vv, unsigned int hhww);
+#define has_SYS_Fill() \
+	(*(char*)vReset == 0x35) /* dev7rom marker */
+
+/* -- SYS_Fill -- */
+/* Not a sys call but a stub for the BLIT opcode */
+extern int SYS_Blit(unsigned int dydx, unsigned int sysx, unsigned int hhww);
+#define has_SYS_Blit() \
+	(*(char*)vReset == 0x35) /* dev7rom marker */
 
 /* -- SYS_Random -- */
 extern unsigned int SYS_Random(void);
 #define has_SYS_Random() 1
 
 /* -- SYS_VDrawBits -- */
-extern void SYS_VDrawBits(int fgbg, char bits, char *address);
+extern void SYS_VDrawBits(int fgbg, int bits, char *address);
 #define has_SYS_VDrawBits() 1
 
 /* -- SYS_Exec
@@ -157,6 +171,10 @@ extern void SYS_Exec(void *romptr, void *vlr);
 /* -- SYS_SetMode */
 extern void SYS_SetMode(int);
 #define has_SYS_SetMode 1
+
+/* -- SYS_SetMemory */
+extern void SYS_SetMemory(int count, int val, void *addr);
+#define has_SYS_SetMemory 1
 
 /* -- SYS_ReadRomDir
    Notes: the name is copied into buf8 */
@@ -188,5 +206,7 @@ extern void* SYS_Sprite6y(const void *srcpix, void *dst);
 extern void* SYS_Sprite6xy(const void *srcpix, void *dst);
 #define has_SYS_Sprite6() \
 	((romType & 0xfc) >= romTypeValue_ROMv3)
+
+
 
 #endif

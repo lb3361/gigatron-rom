@@ -16,12 +16,15 @@ def scope():
             LDI(2);ADDW(T3);DEEK();STW(T1)
             label('__@ladd_t0t1')
             LDW(LAC);ADDW(T0);STW(LAC);_BLT('.a1')
-            SUBW(T0);ORW(T0);BRA('.a2')
+            SUBW(T0);ORW(T0);_BLT('.a2')
+            label('.a0')
+            LDW(LAC+2);BRA('.a3')
             label('.a1')
-            SUBW(T0);ANDW(T0)
+            SUBW(T0);ANDW(T0);_BGE('.a0')
             label('.a2')
-            LD(vACH);ANDI(128);PEEK()
-            ADDW(LAC+2);ADDW(T1);STW(LAC+2)
+            LDI(1);ADDW(LAC+2)
+            label('.a3')
+            ADDW(T1);STW(LAC+2)
             RET()
 
     module(name='rt_ladd.s',
@@ -46,12 +49,15 @@ def scope():
             LDI(2);ADDW(T3);DEEK();STW(T1)
             label('__@lsub_t0t1')
             LDW(LAC);_BLT('.a1')
-            SUBW(T0);STW(LAC);ORW(T0);BRA('.a2')
+            SUBW(T0);STW(LAC);ORW(T0);_BLT('.a2')
+            label('.a0')
+            LDW(LAC+2);BRA('.a3')
             label('.a1')
-            SUBW(T0);STW(LAC);ANDW(T0)
+            SUBW(T0);STW(LAC);ANDW(T0);_BGE('.a0')
             label('.a2')
-            LD(vACH);ANDI(128);PEEK();XORI(1);SUBI(1)
-            ADDW(LAC+2);SUBW(T1);STW(LAC+2)
+            LDW(LAC+2);SUBI(1)
+            label('.a3')
+            SUBW(T1);STW(LAC+2)
             RET()
 
     module(name='rt_lsub.s',
@@ -67,10 +73,10 @@ def scope():
             NEGVL(LAC);RET()
             warning("Cpu6: should NEGVL instead of calling _@_lneg")
         else:
-            LDI(0);SUBW(LAC);STW(LAC);BNE('.lneg1')
-            LDI(0);SUBW(LAC+2);STW(LAC+2);RET()
+            LDI(0);SUBW(LAC);STW(LAC);BEQ('.lneg1')
+            LDWI(0xffff)
             label('.lneg1')
-            _LDI(-1);XORW(LAC+2);STW(LAC+2);RET()
+            SUBW(LAC+2);STW(LAC+2);RET()
             
     module(name='rt_lneg.s',
            code= [ ('EXPORT', '_@_lneg'),
@@ -84,10 +90,10 @@ def scope():
             NEGVL(T0);RET()
             warning("Cpu6: should NEGVL instead of calling __@lneg_t0t1")
         else:
-            LDI(0);SUBW(T0);STW(T0);BNE('.lneg1')
-            LDI(0);SUBW(T0+2);STW(T0+2);RET()
+            LDI(0);SUBW(T0);STW(T0);BEQ('.lneg1')
+            LDWI(0xffff)
             label('.lneg1')
-            _LDI(-1);XORW(T0+2);STW(T0+2);RET()
+            SUBW(T0+2);STW(T0+2);RET()
 
     module(name='rt_lnegt0t1.s',
            code=[ ('EXPORT', '__@lneg_t0t1'),

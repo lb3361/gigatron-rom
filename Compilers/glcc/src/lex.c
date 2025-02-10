@@ -303,6 +303,22 @@ int gettok(void) {
 					error("invalid hexadecimal constant `%S'\n", token, (char *)rcp-token);
 				cp = rcp;
 				tsym = icon(n, overflow, 16);
+			} else if (*token == '0' && (*rcp == 'b' || *rcp == 'B')) {
+				int d, overflow = 0;
+				while (*++rcp) {
+					if (*rcp == '0' || *rcp == '1')
+						d = *rcp - '0';
+					else
+						break;
+					if (n&~(~0UL >> 1))
+						overflow = 1;
+					else
+						n = (n<<1) + d;
+				}
+				if ((char *)rcp - token <= 2)
+					error("invalid binary constant `%S'\n", token, (char *)rcp-token);
+				cp = rcp;
+				tsym = icon(n, overflow, 16);
 			} else if (*token == '0') {
 				int err = 0, overflow = 0;
 				for ( ; map[*rcp]&DIGIT; rcp++) {
@@ -737,6 +753,17 @@ int gettok(void) {
 				cp = rcp + 12;
 				return ATTRIBUTE;
 			}			
+			if (rcp[0] == '_'
+			&&  rcp[1] == 't'
+			&&  rcp[2] == 'y'
+			&&  rcp[3] == 'p'
+			&&  rcp[4] == 'e'
+			&&  rcp[5] == 'o'
+			&&  rcp[6] == 'f'
+			&& !(map[rcp[7]]&(DIGIT|LETTER))) {
+				cp = rcp + 7;
+				return TYPEOF;
+			}
 			goto id;
 		default:
 			if ((map[cp[-1]]&BLANK) == 0) {
