@@ -163,13 +163,19 @@ a shorter sequence that runs faster.
 | ------ | -------- | -------| -------
 | DOKEA  | `3b VV`       | 28  | Store word `[VV..VV+1]` at address `[vAC]..[vAC]+1`
 | DOKEQ  | `44 II`       | 22  | Store immediate `II` at address `[vAC]..[vAC]+1`
-| DOKEI  | `35 62 HH LL` | 30  | Store immediate `HHLL` at address `[vAC]..[vAC]+1`
+| DOKEI  | `35 63 HH LL` | 30  | Store immediate `HHLL` at address `[vAC]..[vAC]+1`
 | DEEKA  | `3d VV`       | 30  | Load word at address `[vAC]..[vAC]+1` into `VV..VV+1`<br>(trashes `sysArgs7`)
 | DEEKV  | `41 VV`       | 28  | Load word at address `VV..VV+1` into `vAC`
 | POKEA  | `39 VV`     | 22  | Store byte `[VV]` at address `[vAC]`
 | POKEQ  | `46 II`     | 20  | Store immediate `II` at address `[vAC]`
 | PEEKA  | `e1 VV`     | 24  | Load byte at address `[vAC]` into `[VV]`
 | PEEKV  | `dd VV`     | 28  | Load byte at address `VV` into `vAC`
+
+As indicated above, opcode `DEEKA` overwrites `sysArgs7` because it uses it as a temporary during execution.
+This means that it cannot be used with either a source or a destination that overlaps `sysArgs7`.
+The same holds for all instructions documented as thrashing certain registers or sysArg bytes.
+This makes it difficult to use these instructions to prepare SYS call arguments for instance.
+
 
 **History:** :
 Many of these instructions were discussed in the "New vCPU
@@ -203,10 +209,10 @@ without changing the contents of the accumulator `vAC`.
 | MOVQB  | `48 VV II`    | 26 | Store immediate `II` into byte `VV`
 | MOVQW  | `4a VV II`    | 28 | Store immediate `II` into word `VV..VV+1`
 | MOVIW  | `b1 VV HH LL` | 30 | Store immediate `HHLL` into word `VV..VV+1`
-| MOVW   | `bc YY XX`    | 36 | Copy word from `XX..XX+1` to `YY..YY+1`<br>(trashes `sysArgs7`)
+| MOVW   | `bb YY XX`    | 36 | Copy word from `XX..XX+1` to `YY..YY+1`<br>(trashes `sysArgs7`)
 | INCV   | `70 VV`       | 22 to 26 | Add 1 to word `VV..VV+1`
 | NEGV   | `18 VV`       | 26 | Negates word `VV..VV+1`
-| ADDSV  | `c6 VV II`    | 30 to 56 | Add signed immediate `II` to word `VV..VV+1`
+| ADDSV  | `c6 VV II`    | 30 to 56 | Add signed immediate `II` to word `VV..VV+1`<br>(trashes `sysArgs7`)
 | ADDV   | `66 VV`       | 30 | Add `vAC` contents to word `VV..VV+1`
 | SUBV   | `68 VV`       | 30 | Subtract `vAC` contents from word `VV..VV+1`
 
@@ -416,6 +422,10 @@ for conditional jump opcodes.
 | CMPLS  | `35 14`    | max 22+20+24| Signed compare long accumulator `vLAC` with `[vAC]..[vAC]+3`<br>(trashes `sysArgs7`)
 | CMPLU  | `35 16`    | max 22+20+24| Unsigned compare long accumulator `vLAC` with `[vAC]..[vAC]+3`<br>(trashes `sysArgs7`)
 
+As explained before, instructions that thrashes certain sysArg locations cannot use
+these locations as either source or destination. However it is possible to use opcode `MOVL`
+with destination `sysArgs0` if the source does not overlap the sysArg array.
+
 Three additional instructions operate on long integers in page zero
 without changing the contents of either `vAC` or `vLAC` (unless of
 course their argument specifies addresses that overlap `vAC`
@@ -442,11 +452,11 @@ whose upper 32 bits overlate the long accumulator `vLAC`.
 
 | Opcode | Encoding      | Cycles     | Function
 | ------ | ----------    | ---------- | -------
-| NEGX   | `35 0e`       | 22+14+24   | Negate the extended accumulator `vLAX`
-| MACX   | `35 1c`       | 394 to 842 | Add `vACL` (8 bits) times `sysArgs[0..4]` to `vLAX`<br>(trashes `sysArgs[5..7]`, `vACH`)
-| LSRXA  | `35 18`       | 42 to 322  | Right shift `vLAX` by `vAC & 0x3f` positions<br>(trashes `sysArgs[6..7]`, `vAC`)
-| LSLXA  | `35 12`       | 38 to 415  | Left shift `vLAX` by `vAC & 0x3f` positions<br>(trashes `sysArgs[6..7]`, `vAC`)
-| RORX   | `35 1a`       | 198        | Right rotate `vLAX` from/into bit 0 of `vAC`.<br>(trashes `sysArgs[6..7]`, `vAC`)
+| NEGX   | `35 0e`       | 22+14+24   | Negate the extended accumulator `vLAX`<br>(thrashes `sysArgs[67]`) 
+| MACX   | `35 1c`       | 394 to 842 | Add `vACL` (8 bits) times `sysArgs[0..4]` to `vLAX`<br>(trashes `sysArgs[5-7]`, `vACH`)
+| LSRXA  | `35 18`       | 42 to 322  | Right shift `vLAX` by `vAC & 0x3f` positions<br>(trashes `sysArgs[67]`, `vAC`)
+| LSLXA  | `35 12`       | 38 to 415  | Left shift `vLAX` by `vAC & 0x3f` positions<br>(trashes `sysArgs[67]`, `vAC`)
+| RORX   | `35 1a`       | 198        | Right rotate `vLAX` from/into bit 0 of `vAC`.<br>(trashes `sysArgs[67]`, `vAC`)
 
 The opcode `MACX` is a building block for both the long and the
 floating point multiplication routines. It multiplies a 32 bits number (in `sysArgs[0..4]`)
@@ -474,12 +484,14 @@ by the once popular Microsoft basic interpreters.
 
 | Opcode | Encoding      | Cycles     | Function
 | ------ | ----------    | ---------- | -------
-| MOVF   | `35 dd YY XX` | 30+38      | Copy fp number from `XX..XX+4` to `YY..YY+4`<br>(trashes `sysArgs[0..7]`)
+| MOVF   | `35 dd YY XX` | 30+38      | Copy fp number from `XX..XX+4` to `YY..YY+4`<br>(trashes `sysArgs[0-7]`)
 | LDFAC  | `35 27`       | typ 72     | Load fp number `[vAC]..[vAC]+4` into float accumulator<br>(trashes `vAC` `vT3` `sysArgs[5-7]`)
 | STFAC  | `35 25`       | typ 66     | Store float accumulator into fp var `[vAC]..[vAC]+4`<br>(trashes `vAC` `sysArgs[5-7]`)
-| LDFARG | `35 29`       | typ 72     | Load floating point argument `[vAC]..[vAC]+4`<br>(trashes `vAC` `sysArgs[5-7]`)
+| LDFARG | `35 29`       | typ 72     | Load floating point argument `[vAC]..[vAC]+4`<br>(trashes `vAC` `vT3` `sysArgs[5-7]`)
 
 Opcode `MOVF` merely moves five consecutive bytes in page zero.
+Although it thrashes the sysArg array, it is possible to use opcode `MOVF`
+with destination `sysArgs0` if the source does not overlap the sysArg array.
 
 Opcodes `LDFAC` and `STFAC` respectively unpack and pack a floating
 point number into a virtual floating point accumulator composed of
@@ -501,8 +513,8 @@ Two opcodes, `FILL` and `BLIT` are useful for creating graphics.
 
 | Opcode | Encoding | Cycles | Function
 | ------ | -------- | ------ | ----
-| FILL   | `35 4a`  | max `36+h*(24+ceil(w/12)*28)` | Fill a rectangular area<br>(trashes sysArgs[4-7])
-| BLIT   | `35 48`  | max `72+h*(20+ceil(w/6)*56)`  | Copy a rectangular area<br>(trashes sysArgs[0-7], vLAC)
+| FILL   | `35 4a`  | max `36+h*(24+ceil(w/12)*28)` | Fill a rectangular area<br>(trashes `sysArgs[4-7]`)
+| BLIT   | `35 48`  | max `72+h*(20+ceil(w/6)*56)`  | Copy a rectangular area<br>(trashes `vLAC` `sysArgs[0-7]`)
 
 Both opcodes see the Gigatron memory as a 256x256 array of bytes, with both rows
 and columns wrapping around, and operate on subarrays of this array, 
@@ -515,23 +527,37 @@ is provided  in register `vT2`, y coordinate in the high byte, x coordinate in t
 and whose size is provided by register `vAC`, height im the high byte, and width in the low byte.
 A width or height of 0 means 256.
 
-* Opcode `FILL` writes the low byte of register `vT3` into all bytes in the destination subarray. This is useful to clear the screen or display filled rectangles. The peak speed of 60 bytes per scanline is achieved when the destination width is a multiple of 12. It takes 28 cycles to fill 12 consecutive bytes in a row. Excess bytes typically take another chunk of 28 cycles. A special mode saves time for vertical lines, that is, width 1.
+* Opcode `FILL` writes the low byte of register `vT3` into all bytes
+  in the destination subarray. This is useful to clear the screen or
+  display filled rectangles. The peak speed of 60 bytes per scanline
+  is achieved when the destination width is a multiple of 12. It takes
+  28 cycles to fill 12 consecutive bytes in a row. Excess bytes
+  typically take another chunk of 28 cycles. A special mode saves time
+  for vertical lines, that is, width 1.
 
-* Opcode `BLIT` copies an equally sized source subarray into the destination subarray. Register `vT3` describes the coordinates of the top-left corner of the source subarray, y coordinate in the high byte, and x coordinate in the low byte. The peak speed of 15 bytes per scanline is achieved when the width is a multiple of 6. When the subarray height is less than 128, the copy operation is ordered to ensure that it does not overwrite source bytes before using them. However this fails when both subarrays have identical y coordinate and a width of 256. 
+* Opcode `BLIT` copies an equally sized source subarray into the
+  destination subarray. Register `vT3` describes the coordinates of
+  the top-left corner of the source subarray, y coordinate in the high
+  byte, and x coordinate in the low byte. The peak speed of 15 bytes
+  per scanline is achieved when the width is a multiple of 6. When the
+  subarray height is less than 128, the copy operation is ordered to
+  ensure that it does not overwrite source bytes before using
+  them. However this fails when both subarrays have identical y
+  coordinate and a width of 256.
 
 
 ### Context and interrupts
 
 Two instructions, `VSAVE` and `VRESTORE` respectively save and restore
-the full virtual interpreter context. A third instruction `EXCH` is
+the full virtual interpreter context. A third instruction `EXBA` is
 useful to atomically read-modify-write.
 
 
 |  Opcode  | Encoding    | Cycles  | Function
 | -------- | ----------- | ------- | -------
-| VSAVE    | `35 2b`     | ~104    | save full vCPU context into xxe0-xxff
-| VRESTORE | `35 2d`     | ~126    | restore vCPU context saved in xxe0-xxff
-| EXBA     | `35 31 ii`  |  28+18  | perform ii->[vAC]->vAC atomically
+| VSAVE    | `35 2b`     | ~104    | save full vCPU context into xxe0-xxff<br>(modifies `sysArgs7`)
+| VRESTORE | `35 2d`     | ~126    | restore vCPU context saved in xxe0-xxff<br>(modifies all registers, `sysArgs[0-7]`)
+| EXBA     | `35 31 ii`  |  28+18  | perform ii->[vAC]->vAC atomically<br>(thrashes `sysArgs7`)
 
 Both `VSAVE` and `VRESTORE` take a page number `xx` in the low byte of
 register `vAC` and use address range `xxe0-xxff` to save or restore
@@ -640,7 +666,7 @@ Its sole purpuse is to make locations `0x1f2-0x1f5` available for other purposes
 
 | Opcode | Encoding | Cycles | Function
 | ------ | -------- | -------| -------
-| RESET  | private  | n/a    | Soft reset
+| RESET  | private  | n/a    | Soft reset<br>(does not return)
 
 This instruction was implemented to shorten the reset sequence at
 address `0x1f0` which used to be six bytes long and is now only two
