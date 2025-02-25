@@ -163,7 +163,7 @@ a shorter sequence that runs faster.
 | ------ | -------- | -------| -------
 | DOKEA  | `3b VV`       | 28  | Store word `[VV..VV+1]` at address `[vAC]..[vAC]+1`
 | DOKEQ  | `44 II`       | 22  | Store immediate `II` at address `[vAC]..[vAC]+1`
-| DOKEI  | `35 62 HH LL` | 30  | Store immediate `HHLL` at address `[vAC]..[vAC]+1`
+| DOKEI  | `35 63 HH LL` | 30  | Store immediate `HHLL` at address `[vAC]..[vAC]+1`
 | DEEKA  | `3d VV`       | 30  | Load word at address `[vAC]..[vAC]+1` into `VV..VV+1`<br>(trashes `sysArgs7`)
 | DEEKV  | `41 VV`       | 28  | Load word at address `VV..VV+1` into `vAC`
 | POKEA  | `39 VV`     | 22  | Store byte `[VV]` at address `[vAC]`
@@ -203,7 +203,7 @@ without changing the contents of the accumulator `vAC`.
 | MOVQB  | `48 VV II`    | 26 | Store immediate `II` into byte `VV`
 | MOVQW  | `4a VV II`    | 28 | Store immediate `II` into word `VV..VV+1`
 | MOVIW  | `b1 VV HH LL` | 30 | Store immediate `HHLL` into word `VV..VV+1`
-| MOVW   | `bc YY XX`    | 36 | Copy word from `XX..XX+1` to `YY..YY+1`<br>(trashes `sysArgs7`)
+| MOVW   | `bb YY XX`    | 36 | Copy word from `XX..XX+1` to `YY..YY+1`<br>(trashes `sysArgs7`)
 | INCV   | `70 VV`       | 22 to 26 | Add 1 to word `VV..VV+1`
 | NEGV   | `18 VV`       | 26 | Negates word `VV..VV+1`
 | ADDSV  | `c6 VV II`    | 30 to 56 | Add signed immediate `II` to word `VV..VV+1`
@@ -515,15 +515,29 @@ is provided  in register `vT2`, y coordinate in the high byte, x coordinate in t
 and whose size is provided by register `vAC`, height im the high byte, and width in the low byte.
 A width or height of 0 means 256.
 
-* Opcode `FILL` writes the low byte of register `vT3` into all bytes in the destination subarray. This is useful to clear the screen or display filled rectangles. The peak speed of 60 bytes per scanline is achieved when the destination width is a multiple of 12. It takes 28 cycles to fill 12 consecutive bytes in a row. Excess bytes typically take another chunk of 28 cycles. A special mode saves time for vertical lines, that is, width 1.
+* Opcode `FILL` writes the low byte of register `vT3` into all bytes
+  in the destination subarray. This is useful to clear the screen or
+  display filled rectangles. The peak speed of 60 bytes per scanline
+  is achieved when the destination width is a multiple of 12. It takes
+  28 cycles to fill 12 consecutive bytes in a row. Excess bytes
+  typically take another chunk of 28 cycles. A special mode saves time
+  for vertical lines, that is, width 1.
 
-* Opcode `BLIT` copies an equally sized source subarray into the destination subarray. Register `vT3` describes the coordinates of the top-left corner of the source subarray, y coordinate in the high byte, and x coordinate in the low byte. The peak speed of 15 bytes per scanline is achieved when the width is a multiple of 6. When the subarray height is less than 128, the copy operation is ordered to ensure that it does not overwrite source bytes before using them. However this fails when both subarrays have identical y coordinate and a width of 256. 
+* Opcode `BLIT` copies an equally sized source subarray into the
+  destination subarray. Register `vT3` describes the coordinates of
+  the top-left corner of the source subarray, y coordinate in the high
+  byte, and x coordinate in the low byte. The peak speed of 15 bytes
+  per scanline is achieved when the width is a multiple of 6. When the
+  subarray height is less than 128, the copy operation is ordered to
+  ensure that it does not overwrite source bytes before using
+  them. However this fails when both subarrays have identical y
+  coordinate and a width of 256.
 
 
 ### Context and interrupts
 
 Two instructions, `VSAVE` and `VRESTORE` respectively save and restore
-the full virtual interpreter context. A third instruction `EXCH` is
+the full virtual interpreter context. A third instruction `EXBA` is
 useful to atomically read-modify-write.
 
 
