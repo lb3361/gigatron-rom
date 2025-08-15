@@ -8023,7 +8023,7 @@ oplabel('MOVL_v7')
 bra('fsm18op2#16')              #14
 ld('movl#3a')                   #15
 
-# Instruction MOVF (35 dd yy xx), 30+38 cycles
+# Instruction MOVF (35 dd yy xx), 30+16+30 cycles
 # * Move five bytes float from [xx] to [yy]
 # * No page crossings, trashes sysArgs,T0,T1, but MOVF(xx,sysArgs0) works
 # * Origin: https://forum.gigatron.io/viewtopic.php?p=2322#p2322

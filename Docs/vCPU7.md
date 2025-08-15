@@ -474,7 +474,7 @@ by the once popular Microsoft basic interpreters.
 
 | Opcode | Encoding      | Cycles     | Function
 | ------ | ----------    | ---------- | -------
-| MOVF   | `35 dd YY XX` | 30+38      | Copy fp number from `XX..XX+4` to `YY..YY+4`<br>(trashes `sysArgs[0..7]`)
+| MOVF   | `35 dd YY XX` | 30+16+30   | Copy fp number from `XX..XX+4` to `YY..YY+4`<br>(trashes `sysArgs[0..7]`)
 | LDFAC  | `35 27`       | typ 72     | Load fp number `[vAC]..[vAC]+4` into float accumulator<br>(trashes `vAC` `vT3` `sysArgs[5-7]`)
 | STFAC  | `35 25`       | typ 66     | Store float accumulator into fp var `[vAC]..[vAC]+4`<br>(trashes `vAC` `sysArgs[5-7]`)
 | LDFARG | `35 29`       | typ 72     | Load floating point argument `[vAC]..[vAC]+4`<br>(trashes `vAC` `sysArgs[5-7]`)
