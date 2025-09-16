@@ -1,0 +1,145 @@
+
+
+GT1 compression
+===============
+
+
+GT1 compression is a variant of the GT1 format that reduces their
+average size by 50% and is therefore very useful to increase the
+number of Gigatron programs that can be stored in ROM.
+
+The DEV7ROM SYS_Exec system call automatically recognizes compressed
+GT1 files and loads them transparently. This is currently the only way
+to load compressed GT1 files. Neither the standard Loader nor the SPI
+card loader recognize compressed GT1 files.
+
+Therefore compressed GT1 files, with suffix ".gt1z" only appear during
+the compilation of DEV7ROM or of any of its derivatives.  The
+compilation command can embed gt1 file or gt1z files into the ROM.  An
+additional rule automatically invokes the "gt1z" program to update the
+compressed GT1 files on the basis of an updated GT1 file.
+
+
+Format
+======
+
+The authoritative source for the GT1 compressed file format is the
+function "decompress" in file "Utils/gt1z/gt1z.cpp" which describes
+how to load a compressed GT1 file in memory. Additional information on
+the design of these files can be found at
+
+      "https://forum.gigatron.io/viewtopic.php?t=458".
+
+
+GT1Z-file :=
+  + magicByte_00 + magicByte_ff
+  + loAddressByte
+  + hiAddressByte
+  + n * ( tokenByte + literalBytes + matchData )
+  + hiExecByte
+  + loExecByte
+
+A compressed GT1 file always start with bytes 0x00 and 0xff which
+are an unlikely start for a regular GT1 file. The DEV7ROM SYS_Exec
+code interprets all files starting with these bytes as compressed
+GT1 files. The next two bytes represent the address of the first segment.
+Follows a sequence of records followed by the address of the
+executable code that SYS_Exec can invoke.
+
+While decoding the successive records, the loader maintains several variables:
+- a 16 bits segment address <segmentAddress> initially set to [hiAddressByte]:[loAddressByte]
+- a 8 bits writing offset <writingOffset> that is set to the lo byte of the segment address
+  and is incremented whenever a byte is written to memory
+- a 17 bits match offset <matchOffset> initially set to value 0x0001.
+
+Each record starts with a token byte whose eight bits are named DLLLMMMM.
+- Bits 4-6, LLL, indicate the number of literal bytes.
+- Bits 0-3, MMMM, encode the number of match bytes.
+- Bit 7, D, qualifies the encoding of the match data.
+
+This is followed by [literalBytes] and [matchData].
+
+If LLL==7, [literalBytes] starts with a length byte followed by the
+specified number of literal bytes, value zero meaning 256.  If LLL<7,
+[literalBytes] simply contain LLL literal bytes.  These literal bytes
+are copied at address <segmentAddress.hi:writingOffset> and
+<writingOffset> is incremented accordingly.
+
+If MMMM=0, then this is the last record of the segment. What happens
+next depends on bit D. If D=1, [matchData] is empty, and new segment
+address is computed by incrementing the high byte of <segmentAddress>
+and resetting <writingOffset> to <segmentAddress.lo>. If D=0,
+[matchData] contains two or three bytes. If the first byte of
+[matchData] is nonzero, this is the new value of <segmentAddress.hi>
+and the second and last byte of [matchData] contains
+<segmentAddress.lo>.  If the first byte of [matchData] is zero, this
+is the last record of the file and the following two bytes of
+[matchData] are respectively the high and low bytes of the execution
+address.
+
+If MMMM=15, then [matchData] starts with a match length byte, value 0
+meaning 256. If MMMM>0, then the match length is MMMM+1.  What happens
+next depends on bit D in the token byte.  If D=0, then [matchData] is
+empty and <matchOffset> is unchanged.  If D=1, then [matchData]
+contains one or two bytes.  If the first byte is smaller than 128,
+then [matchData] contains the high and low bytes of the new value of
+<matchOffset>.  Otherwise [matchData] contains a single byte of the
+form 1XXXXXXX.  If XXXXXXX is smaller than the difference between
+<writingOffset> and <segmentAddress.lo>, then <matchOffset.hi> is set
+to zero and <matchOffset.lo> is set to XXXXXXX+1.  Otherwise
+<matchOffset.hi> is set to one and <matchOffset.hi> is set to
+(XXXXXXX+129)&0xff. The match source address is then computed by
+subtracting <matchOffset.hi> from <segmentAddress.hi> and
+<marchOffset.lo> from <writingOffset>. There is no carry propagation
+between these two subtractions. Finally a number of bytes equal to the
+match length are copied from the match source address to
+<segmentAddress.hi:writingOffset> and <writingOffset> is incremented
+accordingly.
+
+
+Relocatable compressed GT1 files
+================================
+
+A compressed GT1 file is said to be relocatable if all its segments
+are located in consecutive pages and start at the same offset. When
+this is the case, all new segments are created with a token byte with
+bit D equal to zero, meaning that the only place where an address is
+indicated are the third and fourth bytes of the compressed GT1 files.
+It might be possible to provide an alternate version of SYS_Exec that
+allows for loading relocatable compressed GT1 files at arbitrary
+addresses in memory.
+
+
+Utility programs
+================
+
+Program "gt1z" whose source is in "Utils/gt1z" can be used to
+create compressed GT1 files from regular GT1 files, to verify
+compressed GT1 files against original GT1 files, or to decode
+compressed GT1 files into regular GT1 files. 
+
+Usage: gt1z [options] <fin> <fout>
+Compression tool for gt1 files
+Options:
+ -c   Compress GT1 file <fin> into GT1Z file <fout> (default)
+ -d   Decompress GT1Z file <fin> into GT1 file <fout>
+ -v   Verify GT1Z file <fin> against GT1 file <fout>
+ -f   Overwrites existing output file
+ -r   Warn if the file is not relocatable
+ -z   Pad space between segments in a same page with zeroes
+ -D   Increases verbosity level
+
+This program never overwrites a file under option -f is provided.
+Option -z can be used to improve the encoding of files that contain
+multiple segments located in the same page. This happens a lot with
+TinyBasic programs encoded with "gtbtogt1.py". Option -D prints out a
+symbolic representation of all the records in the compressed GT1 file.
+
+Programs "imgtogt1.py" and "gtbtogt1.py" can be used to respectively
+convert image files and TinyBasic files into GT1 files that can then
+be compressed with "gt1z". These are good candidates for option -z.
+
+
+
+
+-- End of document --
