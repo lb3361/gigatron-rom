@@ -98,6 +98,7 @@ static int  if_not_asgn_tmp(Node,int);
 static int  if_cv_from(Node,int,int);
 static int  if_arg_reg_only(Node);
 static int  if_arg_stk(Node,int);
+static int  if_vac_contains(Node, Symbol);
 
 #define mincpuf(c,f,cost) ((cpu<(c)&&!cpuflags.f)?LBURG_MAX:(cost))
 #define mincpu(c,cost)    ((cpu<(c))?LBURG_MAX:(cost))
@@ -118,6 +119,7 @@ static Symbol iregw, lregw, fregw;
 
 /* Misc */
 static int codenum = 0;         /* uni */
+static unsigned rmask = 0;      /* masked registers */
 static int cseg = 0;            /* segment */
 static int cpu = 5;             /* cpu version */
 
@@ -658,14 +660,14 @@ stmt: GTI2(ac,con0) "\t%0_BGT(%a);\n" 28
 stmt: GEI2(ac,con0) "\t%0_BGE(%a);\n" 28
 stmt: GTU2(ac,con0) "\t%0_BNE(%a);\n" 28
 stmt: LEU2(ac,con0) "\t%0_BEQ(%a);\n" 28
-stmt: LTI2(ac,conB) "\t%0_CMPIS(%1);_BLT(%a)%{!A};\n" ifcpu7(56,64)
-stmt: LEI2(ac,conB) "\t%0_CMPIS(%1);_BLE(%a)%{!A};\n" ifcpu7(56,64)
-stmt: GTI2(ac,conB) "\t%0_CMPIS(%1);_BGT(%a)%{!A};\n" ifcpu7(56,64)
-stmt: GEI2(ac,conB) "\t%0_CMPIS(%1);_BGE(%a)%{!A};\n" ifcpu7(56,64)
-stmt: LTU2(ac,conB) "\t%0_CMPIU(%1);_BLT(%a)%{!A};\n" ifcpu7(56,64)
-stmt: LEU2(ac,conB) "\t%0_CMPIU(%1);_BLE(%a)%{!A};\n" ifcpu7(56,64)
-stmt: GTU2(ac,conB) "\t%0_CMPIU(%1);_BGT(%a)%{!A};\n" ifcpu7(56,64)
-stmt: GEU2(ac,conB) "\t%0_CMPIU(%1);_BGE(%a)%{!A};\n" ifcpu7(56,64)
+stmt: LTI2(ac,conB) "\t%0_CMPIS(%1);_BLT(%a)%{!A};\n" if_incr(a,ifcpu7(56,64),8)
+stmt: LEI2(ac,conB) "\t%0_CMPIS(%1);_BLE(%a)%{!A};\n" if_incr(a,ifcpu7(56,64),8)
+stmt: GTI2(ac,conB) "\t%0_CMPIS(%1);_BGT(%a)%{!A};\n" if_incr(a,ifcpu7(56,64),8)
+stmt: GEI2(ac,conB) "\t%0_CMPIS(%1);_BGE(%a)%{!A};\n" if_incr(a,ifcpu7(56,64),8)
+stmt: LTU2(ac,conB) "\t%0_CMPIU(%1);_BLT(%a)%{!A};\n" if_incr(a,ifcpu7(56,64),8)
+stmt: LEU2(ac,conB) "\t%0_CMPIU(%1);_BLE(%a)%{!A};\n" if_incr(a,ifcpu7(56,64),8)
+stmt: GTU2(ac,conB) "\t%0_CMPIU(%1);_BGT(%a)%{!A};\n" if_incr(a,ifcpu7(56,64),8)
+stmt: GEU2(ac,conB) "\t%0_CMPIU(%1);_BGE(%a)%{!A};\n" if_incr(a,ifcpu7(56,64),8)
 stmt: LTI2(ac,iarg) "\t%0%[1b]_CMPWS(%1);_BLT(%a)%{!A};\n" ifcpu7(56,84)
 stmt: LEI2(ac,iarg) "\t%0%[1b]_CMPWS(%1);_BLE(%a)%{!A};\n" ifcpu7(56,84)
 stmt: GTI2(ac,iarg) "\t%0%[1b]_CMPWS(%1);_BGT(%a)%{!A};\n" ifcpu7(56,84)
@@ -915,7 +917,7 @@ reg: LOADI1(ac)    "\t%0%{?c==vAC::ST(%c);}\n"   16
 reg: LOADU1(ac)    "\t%0%{?c==vAC::ST(%c);}\n"   16
 reg: LOADI4(reg)   "\t_MOVL(%0,%c)%{!5};\n" 120
 reg: LOADU4(reg)   "\t_MOVL(%0,%c)%{!5};\n" 120
-regx: LOADF5(regx) "\t_MOVF(%0,%c)%{!5};\n" 150
+reg: LOADF5(reg)   "\t_MOVF(%0,%c)%{!5};\n" 150
 
 # 2) extensions
 eac: CVII2(reg) "LD(%0);XORI(128);SUBI(128);" if_cv_from(a,1,66)
@@ -966,6 +968,8 @@ asgn: ASGNU4(spill,reg) "\tSTW(T0);_MOVL(%1,[SP,%0]);LDW(T0) #genspill\n" 20
 asgn: ASGNF5(spill,reg) "\tSTW(T0);_MOVF(%1,[SP,%0]);LDW(T0) #genspill\n" 20
 
 # Additional rules for cpu > 5
+regx: con   "\t%{?0=~vAC:STW(%c):MOVIW(%0,%c)};\n"  +mincpu7(30)
+regx: conB  "\t%{?0=~vAC:STW(%c):MOVQW(%0,%c)};\n"  +mincpu6(28)
 ac:  ADDI2(ac,con)  "%0ADDWI(%1);"      mincpuf(6,addhi,if_incr(a,38,10))
 ac:  ADDU2(ac,con)  "%0ADDWI(%1);"      mincpuf(6,addhi,if_incr(a,38,10))
 ac:  ADDP2(ac,con)  "%0ADDWI(%1);"      mincpuf(6,addhi,if_incr(a,38,10))
@@ -1279,7 +1283,7 @@ static void nexttrees(Node tree, int n, Node trees[])
         while ((cp = cp->next))
           if (cp->kind != Defpoint)
             break;
-      if (cp && cp->kind == Gen)
+      if (cp && (cp->kind == Gen || cp->kind == Label || cp->kind == Jump))
         trees[i++] = tree = cp->u.forest;
       else
         break;
@@ -1380,28 +1384,20 @@ static int if_incr(Node a, int cost, int bonus)
 {
   /* Reduces the cost of an increment/decrement operation
      when there is evidence that the previous value was preserved in a
-     temporary. This is used to prefer dialect LDW(r);ADDW(i);STW(r)
+     temporary. This is used to prefer dialect LDW(r);ADDI(i);STW(r)
      over the potentially more efficient LDI(i);ADDW(r);STW(r).
      This is hacky and very limited in fact. */
   extern Node head; /* declared in gen.c */
   Node k;
   Symbol syma;
-  if (a && (generic(a->op)==ADD || generic(a->op)==SUB) &&
-      (k = a->kids[0]) && generic(k->op) == INDIR &&
-      k->kids[0] && specific(k->kids[0]->op) == VREG+P &&
-      (syma = k->kids[0]->syms[0]) && syma->temporary )
-    {
-      Node h;
-      int c = cost;
-      for(h = head; h; h = h->link) {
-        if (h->kids[0] == a || h->kids[1] == a)
-          return c;
-        if (generic(h->op) == ASGN &&
-            h->kids[0] && specific(h->kids[0]->op) == VREG+P &&
-            h->kids[0]->syms[0] == syma && syma->u.t.cse == h->kids[1]) 
-          c = cost - bonus;
-      }
-    }
+  int op = (a) ? generic(a->op) : 0;
+  if (op == ADD || op == SUB || op == GT || op == GE ||
+      op == LT || op == LE || op == EQ || op == NE)
+    if ((k = a->kids[0]) && generic(k->op) == INDIR &&
+        k->kids[0] && specific(k->kids[0]->op) == VREG+P &&
+        (syma = k->kids[0]->syms[0]) )
+      if (syma->temporary ||  if_vac_contains(a, syma))
+        return cost - bonus;
   return cost;
 }
 
@@ -1613,6 +1609,39 @@ static Symbol get_target_reg(Node p, int nt)
   }
 }
 
+/* Guess whether previous tree leaves sym into vAC.
+   This is imperfect, only used for cost predicates.
+   It fails to recognize elided temporaries. */ 
+static int if_vac_contains(Node a, Symbol sym)
+{
+  static Node cached_a;
+  static Symbol cached_target, cached_source;
+  if (a != cached_a) {
+    Node h, ph;
+    extern Node head; /* from gen.c */
+    cached_a = a;
+    cached_target = cached_source = 0;
+    for (h = head; (ph = h->link); h=ph)
+      if (ph == a || ph->kids[1] == a)
+        break;
+    if (ph && h && generic(h->op) == ASGN &&
+        h->kids[0] && specific(h->kids[0]->op) == VREG+P) {
+      /* we have one of the ASGN(VREGP,reg) rule */
+      Node p = reuse(h->kids[1], _reg_NT);
+      int rulenum = (*IR->x._rule)(p->x.state, _reg_NT);
+      short *nts = IR->x._nts[rulenum];
+      if (rulenum && get_target_reg(p, nts[0]) == ireg[31]) {
+        cached_target = get_target_reg(h, _asgn_NT);
+        while (generic(p->op) == LOAD && p->kids[0])
+          p = p->kids[0];
+        if (generic(p->op) == INDIR && specific(p->kids[0]->op) == VREG+P)
+          cached_source = p->kids[0]->syms[0];
+      }
+    }
+  }
+  return sym && (sym == cached_target || sym == cached_source);
+}
+
 
 /* lcc callback: finalizer */
 static void progend(void)
@@ -1730,6 +1759,21 @@ static Symbol rmap(int opk)
   default:
     return 0;
   }
+}
+
+/* Find a register by type and name */
+static Symbol findreg(const char *s)
+{
+  int i;
+#define scanregs(regs) \
+  for (i=0; i<NELEMS(regs); i++) \
+    if (regs[i] && !strcmp(s, regs[i]->x.name)) \
+      return regs[i];
+  scanregs(ireg);
+  scanregs(lreg);
+  scanregs(freg);
+#undef scanregs
+  return 0;
 }
 
 /* Return register for argument passing or zero. */
@@ -2281,7 +2325,7 @@ static const char* check_idval(Attribute a, int n)
         return 0;
     }
   }
-  return str;
+  return stringf("'%s'", str);
 }
 
 static const char *check_attributes(Symbol p)
@@ -2308,7 +2352,7 @@ static const char *check_attributes(Symbol p)
           error("incompatible placement constraints (org & place)\n");
         a->okay = (check_uintval(a,0) && !a->args[1]);
         yes = has_org = 1;
-      } else if (a->name == string("offset")) {
+      } else if (a->name == string("offset") && !is_extern) {
         if (has_off)
           error("incompatible placement constraints (multiple offsets)\n");
         a->okay = (check_uintval(a,0) && !a->args[1]);
@@ -2316,11 +2360,15 @@ static const char *check_attributes(Symbol p)
       } else if (a->name == string("nohop") && !is_extern) {
         a->okay = (!a->args[0] && !a->args[1]);
         yes = 1;
-      } else if (a->name == string("alias") && is_extern) {
+      } else if (a->name == string("alias") && is_extern && !alias) {
         alias = check_idval(a, 0);
         a->okay = (alias!=0 && !a->args[1]);
         yes = 1;
-      }      
+      } else if (a->name == string("regalias") && is_extern && !alias) {
+        alias = check_strval(a, 0);
+        a->okay = (alias!=0 && findreg(alias) && !a->args[1]);
+        yes = 1;
+      }
       if (yes && !a->okay)
         error("illegal argument in `%s` attribute\n", a->name);
     }
@@ -2489,6 +2537,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls)
     tmask[IREG] = REGMASK_TEMPS;
     vmask[IREG] = REGMASK_MOREVARS;
   }
+  tmask[IREG] &= ~rmask;
+  vmask[IREG] &= ~rmask;
   /* placement constraints */
   get_constraints(f, &place);
   /* locate incoming arguments */
@@ -2647,7 +2697,7 @@ static void import(Symbol p)
         break;
     if (a)
       lprint("('IMPORT', %s, 'AT', 0x%x)", p->x.name, uintval(a->args[0]));
-    else
+    else if (!isalpha(p->x.name[0]))
       lprint("('IMPORT', %s)", p->x.name);
   }
 }
@@ -2665,14 +2715,20 @@ static void export(Symbol p)
 static void defsymbol(Symbol p)
 {
   /* this is the time to check that attributes are meaningful */
+  Symbol r;
   const char *alias = check_attributes(p);
   if (p->scope >= LOCAL && p->sclass == STATIC)
     p->x.name = stringf("'.%d'", genlabel(1));
   else if (p->generated)
     p->x.name = stringf("'.%s'", p->name);
-  else if (alias)
-    p->x.name = stringf(stringf("'%s'", alias), p->name);
-  else if (p->scope == GLOBAL || p->sclass == EXTERN)
+  else if (alias) {
+    p->x.name = string(alias);
+    if (isalpha(alias[0]) && (r = findreg(alias))) {
+      rmask |= r->x.regnode->mask;
+      p->x.regnode = r->x.regnode;
+      r->x.regnode->vbl = p;
+    }
+  } else if (p->scope == GLOBAL || p->sclass == EXTERN)
     p->x.name = stringf("'%s'", p->name);
   else
     p->x.name = p->name;
