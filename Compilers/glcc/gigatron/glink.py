@@ -1340,7 +1340,7 @@ def _SP(n):
     n = v(n)
     if is_zero(n):
         LDW(SP);
-    elif args.cpu < 6 and is_zeropage(-n):
+    elif is_zeropage(-n):
         LDW(SP); SUBI(-n)
     else:
         _LDI(n); ADDW(SP)
@@ -3056,7 +3056,10 @@ def glink(argv):
             global new_modules
             new_modules = []
             map_modules(romtype)
-            module_list += new_modules
+            if len(new_modules) > 0:
+                for m in new_modules:
+                    m.library = id(new_modules[0])
+                module_list += new_modules
 
         # load libraries requested by the map
         global map_libraries

@@ -1,9 +1,9 @@
 
 
-# GLCC  2.0
+# GLCC-2.0: a C compiler for the Gigatron
 
 
-This LCC--derived compiler and C library targets the [Gigatron](http://gigatron.io) VCPU.
+This LCC-derived compiler and C library targets the [Gigatron](http://gigatron.io) VCPU.
 It keeps many of the ideas of the previous attempt to port LCC to the
 Gigatron (pgavlin's).  For instance it outputs assembly code that can be parsed by
 Python and it features a linker writen in Python that can directly
@@ -50,9 +50,11 @@ Some useful things to know:
   `dtoa()` whose prototypes are provided
   by [`<gigatron/libc.h>`](include/gigatron/gigatron/libc.h).
   
-* Alternatively one can completely bypass stdio and use the 
-  low-level console functions whose prototypes are provided in
-  [`<gigatron/console.h>`](include/gigatron/gigatron/console.h).
+* Alternatively one can completely bypass stdio and either use the 
+  low-level console functions provided
+  in [`<gigatron/console.h>`](include/gigatron/gigatron/console.h)
+  or their more standard equivalents provided
+  in [`<conio.h>`](include/gigatron/conio.h). 
   The function `cprintf()` has all the formatting abilities of `printf`
   but saves memory by bypassing standard io and printing to the console.
   The function `midcprintf` and `mincprintf()` further saves space
