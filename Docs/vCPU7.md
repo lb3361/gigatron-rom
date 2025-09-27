@@ -212,12 +212,12 @@ without changing the contents of the accumulator `vAC`.
 | MOVW   | `bb YY XX`    | 36 | Copy word from `XX..XX+1` to `YY..YY+1`<br>(trashes `sysArgs7`)
 | INCV   | `70 VV`       | 22 to 26 | Add 1 to word `VV..VV+1`
 | NEGV   | `18 VV`       | 26 | Negates word `VV..VV+1`
-| ADDSV  | `c6 VV II`    | 30 to 56 | Add signed immediate `II` to word `VV..VV+1`<br>(trashes `sysArgs7`)
+| ADDSV  | `c6 VV II`    | 30 to 54 | Add signed immediate `II` to word `VV..VV+1`<br>(trashes `sysArgs[67]`)
 | ADDV   | `66 VV`       | 30 | Add `vAC` contents to word `VV..VV+1`
 | SUBV   | `68 VV`       | 30 | Subtract `vAC` contents from word `VV..VV+1`
 
 Opcode `ADDSV` takes a signed byte as immediate argument and generally
-runs in 30 cycles but incurs a penalty of 24/26 cycles when the
+runs in 30 cycles but incurs a penalty of 22/24 cycles when the
 addition crosses a half-page boundary and possibly involves a carry.
 Compared to alternatives such as `LDI;ADDV(VV)`, the amortized cost of
 this penalty, about `|II|/5`, makes this opcode when `|II|` is smaller

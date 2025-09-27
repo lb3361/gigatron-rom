@@ -10936,11 +10936,11 @@ ld(-26/2)                       #24
 
 # ADDSV implementation
 label('addsv#13')
-st([vTmp])                      #13
+st([sysArgs+6])                 #13 argument: address
 ld([vPC+1],Y)                   #14
 st([Y,Xpp])                     #15
-ld([Y,X])                       #16
-ld([vTmp],X)                    #17
+ld([Y,X])                       #16 argument: immediate
+ld([sysArgs+6],X)               #17
 adda([X])			#18
 xora([X])                       #19
 blt('addsv#22')                 #20 was bit7 swapped?
@@ -10997,36 +10997,34 @@ label('addsv#3a')
 ld([vPC+1],Y)                   #3 possible carry in addsv
 ld([vPC])                       #4
 adda(1)                         #5
-st([vPC],X)                     #6
-ld([Y,X])                       #7 asgument: address
-st([vTmp])                      #8
-st([Y,Xpp])                     #9
-ld([Y,X])                       #10 argument: immediate
-ld(0,Y)                         #11
-ld([vTmp],X)                    #12
-blt('addsv#15a')                #13
-ld([Y,X])                       #14
-st([Y,Xpp])                     #15 0 <= imm < 128
-blt('addsv#18a-nc')             #16
-ld(1)                           #17
-label('addsv#18a-c')
-adda([Y,X])                     #18 carry path
-st([Y,X])                       #19
-ld(hi('ENTER'))                 #20
-st([vCpuSelect])                #21
-adda(1,Y)                       #22
-jmp(Y,'NEXTY')                  #23
-ld(-26/2)                       #24
-label('addsv#15a')
-st([Y,Xpp])                     #15 -128 <= imm < 0
-blt('addsv#18a-c')              #16
-ld(0xff)                        #17
-label('addsv#18a-nc')
-ld(hi('ENTER'))                 #18 no carry path
+st([vPC])                       #6
+adda(1,X)                       #7
+ld([Y,X])                       #8  argument: immediate
+ld(0,Y)                         #9
+ld([sysArgs+6],X)               #10 argument: address
+blt('addsv#13a')                #11 is imm < 0 ?
+ld([Y,X])                       #12 new low byte
+st([Y,Xpp])                     #13 0 <= imm < 128
+blt('addsv#16a-nc')             #14
+ld(1)                           #15
+label('addsv#16a-c')
+adda([Y,X])                     #16 carry path
+st([Y,X])                       #17
+ld(hi('ENTER'))                 #18
 st([vCpuSelect])                #19
 adda(1,Y)                       #20
 jmp(Y,'NEXTY')                  #21
 ld(-24/2)                       #22
+label('addsv#13a')
+st([Y,Xpp])                     #13 -128 <= imm < 0
+blt('addsv#16a-c')              #14
+ld(0xff)                        #15
+label('addsv#16a-nc')
+ld(hi('ENTER'))                 #16 no carry path
+st([vCpuSelect])                #17
+adda(1,Y)                       #18
+jmp(Y,'NEXTY')                  #19
+ld(-22/2)                       #20
 
 
 # ---------------------------------------
