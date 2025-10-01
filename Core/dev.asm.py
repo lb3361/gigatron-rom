@@ -8713,7 +8713,7 @@ ld([vPC+1],Y)                   #16
 
 #-----------------------------------------------------------------------
 #
-#   $1A00 ROM page 28: FSM for vCPU long ops
+#   $1A00 ROM page 26: FSM for vCPU long ops
 #
 #-----------------------------------------------------------------------
 
@@ -9035,7 +9035,7 @@ st([sysArgs+4])                 #15
 
 #-----------------------------------------------------------------------
 #
-#   $1b00 ROM page 29:  FSM for vCPU long ops
+#   $1b00 ROM page 27:  FSM for vCPU long ops
 #
 #-----------------------------------------------------------------------
 
@@ -11177,7 +11177,7 @@ st([Y,0xff])                    #20 mark as unused
 ld([Y,0xfd])                    #21 saved vCpuSelect
 st([vCpuSelect],Y)              #22
 ld([vTicks])                    #23
-adda(-24/2-v6502_adjust)        #24 enough time for this and another instruction
+adda(-30/2-v6502_adjust)        #24 enough time for this and another instruction
 blt('vrestore#27b')             #25 possibly a v6502 instruction?
 ld([vTicks])                    #26
 adda(-30/2)                     #27 yes: enter interpreter
