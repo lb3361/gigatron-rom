@@ -506,6 +506,29 @@ Several micro-ops defined in fsm page 21 perform [simple 8-bit operations](https
 | `VLR` | `VRETNZ` | execution address
 
 
+
+
+
+
+
+
+
+```python
+label('se:loadGt1z:seg')
+fsmAsm('LD', [vAC+1])
+fsmAsm('AND', 0x80)
+fsmAsm('BZ', 'se:loadGt1z:longseg')
+fsmAsm('LD', [sysArgs+5])
+fsmAsm('ST', sysArgs+2)
+fsmAsm('LD', [sysArgs+3])
+fsmAsm('ADD', 1)
+fsmAsm('ST', sysArgs+3)
+fsmAsm('B', 'se:loadGt1z:token')
+```
+
+
+
+
 ### 5.7. FSM page 33 : extended vIRQ
 
 [forum](https://forum.gigatron.io/viewtopic.php?t=463)
