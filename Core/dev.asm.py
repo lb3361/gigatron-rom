@@ -6005,12 +6005,12 @@ ld(n)                           #101
 
 label('vBlankFirst#84')
 ld([Y, vIrqCtx_v7])             #84
-ld(AC,Y)                        #85 
+ld(AC,Y)                        #85
 ld([Y,0xff])                    #86 irqMask
 beq('vBlankFirst#89')           #87
 st([Y,0xfe])                    #88 irqFlag
 n,m = runVcpu_ticks(190-89-extra, 5, '---D line 0 timeout masked irq')
-bra('vBlankFirst#vCPU%d' % m)   #89 
+bra('vBlankFirst#vCPU%d' % m)   #89
 ld(n)
 
 label('vBlankFirst#89')
@@ -7480,8 +7480,10 @@ fsmAsm('CHANMASK')
 fsmAsm('LD', [vAC+1])           # token
 fsmAsm('AND', 0x80)
 fsmAsm('BZ', 'se:loadGt1z:match')
-fsmAsm('LUP')                   # hi offset byte (or short offset)
-fsmAsm('OFFSET')                # short offset magic
+fsmAsm('LUP')                   # hi offset byte
+fsmAsm('ST', sysFn+1)
+fsmAsm('AND', 0x80)             # short offset?
+fsmAsm('BNZ', 'se:loadGt1z:short')
 fsmAsm('LUP')                   # lo offset byte
 fsmAsm('ST', sysFn)
 label('se:loadGt1z:match')
@@ -7491,10 +7493,12 @@ fsmAsm('BNZ', 'se:loadGt1z:match')
 fsmAsm('B', 'se:loadGt1z:token')
 
 
+# breaking out of microprogram below...
+
 label('se:loadGt1z:seg')
 ld(fsmState, X)                 #3
-st('se:loadGt1z:longseg', [X])  #4
 ld([vAC+1])                     #5
+st('se:loadGt1z:longseg', [X])  #4 >> longseg
 bge('NEXT')                     #6
 ld(-8/2)                        #7
 ld([sysArgs+5])                 #8 short segment
@@ -7503,39 +7507,35 @@ ld([sysArgs+3])                 #10
 adda(1)                         #11
 st([sysArgs+3])                 #12
 st('se:loadGt1z:token', [X])    #13
-bra('NEXT')                     #14
+bra('NEXT')                     #14 >> token
 ld(-16/2)                       #15
 
-label(fsmLab('OFFSET'))
-st([fsmState])                  #5
-ld([vAC])                       #6
-st([sysFn+1])                   #7 save hi offset
-bge('NEXT')                     #8 return for long offset
-ld(-10/2)                       #9
-ld('se:loadGt1z:match')         #10 short offset jumps here
-st([fsmState])                  #11
-ld([sysArgs+2])                 #12
-suba([sysArgs+5])               #13 addr - segaddr
-bpl(pc()+3)                     #14
-bra(pc()+3)                     #15
-ld(0xff)                        #16
-ora(0x80)                       #16!
-suba([vAC])                     #17 threshold - byte
-ble('se:offset#20')             #18
-ld(0)                           #19
-st([sysFn+1])                   #20 offhi = 0
-ld(0x81)                        #21
-adda([vAC])                     #22
-st([sysFn])                     #23 offlo = (byte+1) & 0x7f
-bra('NEXT')                     #24
-ld(-26/2)                       #25
-label('se:offset#20')
-ld(1)                           #20
-st([sysFn+1])                   #21 offhi = 1
-adda([vAC])                     #22
-st([sysFn])                     #23 offlo = (byte + 1)
-bra('NEXT')                     #24
-ld(-26/2)                       #25
+label('se:loadGt1z:short')
+ld([sysFn+1])                   #3
+st([sysFn])                     #4 save byte
+ld([sysArgs+2])                 #5
+suba([sysArgs+5])               #6 addr - segaddr
+bpl(pc()+3)                     #7
+bra(pc()+3)                     #8
+ld(0xff)                        #9
+ora(0x80)                       #9!
+suba([sysFn])                   #10 threshold - byte
+ble('se:offset#13')             #11
+ld(0)                           #12
+st([sysFn+1])                   #13 offhi = 0
+bra('se:offset#16')             #14
+ld(0x81)                        #15
+label('se:offset#13')
+ld(1)                           #13
+st([sysFn+1])                   #14 offhi = 1
+nop()                           #15
+label('se:offset#16')
+adda([sysFn])                   #16
+st([sysFn])                     #17 offlo = (byte + 1)
+ld('se:loadGt1z:match')         #18
+st([fsmState])                  #19 >> match
+bra('NEXT')                     #20
+ld(-22/2)                       #21
 
 
 #-----------------------------------------------------------------------
@@ -7797,7 +7797,7 @@ oplabel('BLIT_v7')
 ld(hi('blit#17'),Y)             #14
 jmp(Y,'blit#17')                #15
 
-# Instruction FILL_v7 (35 4a) 
+# Instruction FILL_v7 (35 4a)
 oplabel('FILL_v7')
 ld(hi('fsm22op0#17'),Y)         #14
 jmp(Y,'fsm22op0#17')            #15
@@ -8357,11 +8357,11 @@ ld(0)                           #7
 st([vAC+1])                     #8
 ld([sysArgs+6])                 #9
 st([Y,X])                       #10
-ld(hi('ENTER'))			#11
-st([vCpuSelect])		#12
-adda(1,Y)			#13
-jmp(Y,'REENTER')		#14
-ld(-18/2)			#15
+ld(hi('ENTER'))                 #11
+st([vCpuSelect])                #12
+adda(1,Y)                       #13
+jmp(Y,'REENTER')                #14
+ld(-18/2)                       #15
 
 
 #-----------------------------------------------------------------------
@@ -10941,7 +10941,7 @@ ld([vPC+1],Y)                   #14
 st([Y,Xpp])                     #15
 ld([Y,X])                       #16 argument: immediate
 ld([sysArgs+6],X)               #17
-adda([X])			#18
+adda([X])                       #18
 xora([X])                       #19
 blt('addsv#22')                 #20 was bit7 swapped?
 xora([X])                       #21
@@ -10954,13 +10954,13 @@ jmp(Y,'NEXTY')                  #27 in 30 cycles
 ld(-30/2)                       #28
 label('addsv#22')
 st([X])                         #22 yes ==> maybe carry
-ld('addsv#3a')			#23
-st([fsmState])			#24 schedule fix in fsm22
-ld(hi('FSM21_ENTER'))	        #25
-st([vCpuSelect])		#26
+ld('addsv#3a')                  #23
+st([fsmState])                  #24 schedule fix in fsm22
+ld(hi('FSM21_ENTER'))           #25
+st([vCpuSelect])                #26
 adda(1,Y)                       #27
 jmp(Y,'NEXT')                   #28
-ld(-30/2)			#29
+ld(-30/2)                       #29
 
 
 
@@ -11065,9 +11065,9 @@ ld('vIRQ#159')                  #99
 st([fsmState])                  #100
 label('vIRQ#10')
 vSave(0xe0,vAC,vAC+1,vPC,vPC+1) #101,10
-vSave(0xe4,vLR,vLR+1,vSP,vSP+1) 
+vSave(0xe4,vLR,vLR+1,vSP,vSP+1)
 vSave(0xe8,vLAC,vLAC+1,vLAC+2,vLAC+3)
-vSave(0xec,vT2,vT2+1,vT3,vT3+1) 
+vSave(0xec,vT2,vT2+1,vT3,vT3+1)
 vSave(0xf0,sysArgs,sysArgs+1,sysArgs+2,sysArgs+3)
 vSave(0xf4,sysArgs+4,sysArgs+5,sysArgs+6)
 vSave(0xf8,sysFn,sysFn+1,vFAS,vFAE,vLAX)
@@ -11340,7 +11340,7 @@ bra('NEXT')                     #18 vline
 ld(-20/2)                       #19
 
 label('fill#3b')
-ld([sysArgs+4])                 #3 
+ld([sysArgs+4])                 #3
 ble('fill#6b')                  #4 -> burst12
 suba(12)                        #5
 bge('fill#8b')                  #6 -> burst12
@@ -11425,7 +11425,7 @@ ld([sysArgs+5])                 #3 vertical line
 blt('fill#6d')                  #4
 suba(4)                         #5
 bgt('fill#8d')                  #6
-ld([vT2],X)                     #7 
+ld([vT2],X)                     #7
 ld([vT2+1],Y)                   #8 <= 4 left
 adda(3)                         #9
 st([sysArgs+5])                 #10
@@ -11474,7 +11474,7 @@ ld(-28/2)                       #27
 
 #-----------------------------------------------------------------------
 #
-#   $2300 ROM page 35: 
+#   $2300 ROM page 35:
 #
 #-----------------------------------------------------------------------
 
@@ -11509,7 +11509,7 @@ ld('blit#3a')                   #17
 st([fsmState])                  #18
 ld(hi('FSM23_ENTER'))           #19
 st([vCpuSelect])                #20
-adda(1,Y)                       #21 
+adda(1,Y)                       #21
 jmp(Y,'NEXT')                   #22 bra?
 ld(-24/2)                       #23
 
@@ -11527,9 +11527,9 @@ suba([vT3+1])                   #8
 beq('blit#11a')                 #9  -> dsty = srcy
 blt('blit#12a')                 #10 -> dsty < srcy
 # dsty > srcy
-nop()                           #11 
+nop()                           #11
 ld([vT2+1])                     #12 backwardx backwardy
-adda([vAC+1])                   #13 
+adda([vAC+1])                   #13
 suba(1)                         #14
 st([vT2+1])                     #15 dsty += h-1
 ld([vT3+1])                     #16
@@ -11671,7 +11671,7 @@ bra('blit#14d_6')               #12
 st([fsmState])                  #13
 
 label('blit#3e')
-nop()                           #3 backwardy 
+nop()                           #3 backwardy
 ld('blit#3c')                   #4 -> next is backwardx
 st([fsmState])                  #5 backwardy
 ld([sysArgs+5])                 #6
