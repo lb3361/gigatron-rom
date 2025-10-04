@@ -202,8 +202,7 @@ ld([vPC+1],Y)                   #13
 
 The rest now happens in page 23 
 ([`BEQ`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7778-L7793),
-[`BGT`, `BLT`, `BGE`, `BLE`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7806-L7846),
-and [`BNE`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7871-L7886).) 
+[`BGT`, `BLT`, `BGE`, `BLE`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7806-L7846), [`BNE`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7871-L7886), and also [here](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7900-L7909).) 
 Except for the fact that some of these entry points are very close to each other, there is much more space to implement the branch opcodes efficiently. In the end the new branch instructions are faster than the original ones.
 
 However, as a result, plenty of space has been freed in both the main vCPU implementation page (page 3) and prefix `0x35` implementation page (page 23). In particular the page 3 location whose addresses match the second byte of the `Bcc` instructions were now empty. 
