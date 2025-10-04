@@ -589,14 +589,16 @@ what happens when this is the case.
   as if the `VSAVE` instruction had been invoked. Interrupt handlers
   should then return using the VRESTORE opcode.  However, interrupt
   are inhibited when byte `irqMask` at offset 0xff in the context page
-  is nonzero. Flag `irqFlag` indicates whether this has happened.
+  is nonzero. Instead the nonzero byte `irqMask` is copied into `irqFlag`
+  to record the event.
   
 Byte `irqMask` in the context record is automatically set to a nonzero
 value when the context is saved by an interrupt or by `vSAVE`, and is
 cleared by `VRESTORE`. This feature prevents another virtual interrupt
-to occur before the completion of the interrupt handler. When a
-virtual interrupt is inhibited because `vIrqMask` is nonzero, byte
-`irqFlag` in the context record receives a copy of `irqMask`.
+to occur before the completion of the interrupt handler. It can also be used
+to determine whether the code that follows `VSAVE` is executed because the
+context has just been saved (in which case `irqMask` is nonzero) or because
+`VRESTORE` has restored a saved context (in which case `irqMask` is zero).
 
 Opcode `VRESTORE` can also atomically adjusts the value of
 `frameCounter` by adding `vACH` and saturating to `0xff` if there is a
@@ -653,9 +655,8 @@ losing a tick as follows:
    STW(LAC);MOVQW(0,LAC+2)                      # copy old framecount into LAC
    LDWI('clock');ADDL();STLAC()                 # add it to the long var 'clock'
 ```
-Instructions `VSAVE` and `VRESTORE` can also be used to organize
-multiple execution threads. Instruction `EXBA` can then be used for
-thread synchronization.
+Instructions `VSAVE` and `VRESTORE` makes it possible to implement preemptive multitasking.
+Instruction `EXBA` can then be used for thread synchronization.
 
 
 ### Reset instruction and system variable changes.
