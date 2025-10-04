@@ -454,7 +454,7 @@ The [`BLIT`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L77
 Besides implementing the `FILL` opcode, [fsm page 34](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L11220) also implements the new [`SYS_DoubleDabble`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L1046-L1065) sys call which provides a general way to quickly convert binary integers into an arbitrary base. Simply initialize the buffer to zero and call the SYS call for every bit in the integer, starting with the most significant one. For instance, the GLCC compiler library converts numbers to ASCII by either [using this SYS Call](https://github.com/lb3361/gigatron-lcc/blob/master/gigatron/libc/itoa.s#L85-L93) or [emulating it with vCPU instructions](https://github.com/lb3361/gigatron-lcc/blob/master/gigatron/libc/itoa.s#L55-L75).
 
 
-### 5.5. FSM page 21 : SYS_Loader, fsm microprogramming
+### 5.5. FSM page 21 : SYS_Loader and fsm microprogramming
 
 The DEV7ROM loader is almost entirely implemented by SYS call [`SYS_Loader`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L942-L979) which only uses the `sysArgs` array as temporary variables and therefore can load code or data anywhere in memory, except for the essential page zero variables in range `0x00-0x2f`.  Like the ROMv6 loader, it can display a feedback bar but will switch it off if it detects that data is loaded in the memory area that is used to display the bar. As a result the [`Loader.gcl`](https://github.com/lb3361/gigatron-rom/blob/doc/Apps/Loader/Loader.gcl) is reduced to [displaying a friendly message](https://github.com/lb3361/gigatron-rom/blob/doc/Apps/Loader/Loader.gcl#L33-L38) and [invoking the sys call](https://github.com/lb3361/gigatron-rom/blob/doc/Apps/Loader/Loader.gcl#L44-L46).
 
@@ -486,47 +486,68 @@ Several micro-ops defined in fsm page 21 perform [simple 8-bit operations](https
 * Finally, the micro-program [reads the execution address](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7088-L7094) into `vLR` and calls micro-op [`VRETNZ`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L6967-L6972), implemented [here](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7182-L7198), to exit the finite state machine and point the vCPU to the execution address. However, if `vLR` is zero, `VRETNZ` merely returns into an endless loop.
 
 
-### 5.6. FSM page 22 : SYS_Exec, GT1 compression
+### 5.6. FSM page 22 : SYS_Exec and GT1 compression
 
-`LUP` changes to be explained
+The gigatron loads program stored in ROM using [`SYS_Exec`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L918-L940). 
+In all official roms up to ROMv6, the `SYS_Exec` code works by creating and executing a little vCPU program slighlty below the stack pointer. This is convenient because the easiest way to read ROM data is the vCPU `LUP` opcode. 
 
-[forum](https://forum.gigatron.io/viewtopic.php?p=4139#p4139)
+DEV7ROM instead implements `SYS_Exec` with a finite state machine microprogram that resembles that of `SYS_Loader` but is considerably more involved because it can load both GT1 data or compressed GT1 data. The GT1 compression story can be found in the [forum](https://forum.gigatron.io/viewtopic.php?p=4139#p4139) and the format is described in the [documentation](https://github.com/lb3361/gigatron-rom/blob/doc/Docs/GT1-compression.txt) and demonstrated by function `decompress` in the [source code](https://github.com/lb3361/gigatron-rom/blob/doc/Utils/gt1z/gt1z.cpp#L606-L697) of the `gt1z` utility program.  
 
-[doc](https://github.com/lb3361/gigatron-rom/blob/doc/Docs/GT1-compression.txt)
+Like `SYS_Loader`, `SYS_Exec` only uses zero page variables located in the essential region `0x00-0x2f`. This means that it can load code or data anywhere else in the Gigatron memory. Pretty much everything available is used including `vACH` and `sysFn`. The [implementation](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L10678-L10693) is located in page 32. It initializes `sysFn` to `0x0001`, overwriting the address of the sys call, sets `fsmState` to the micro-program entry point [`se:exec`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7435), and fires the finite state machine. Before returning to the vCPU, the micro-program resets `sysFn` to its initial value, which is the value a vCPU program would have found when just loaded.
 
 | Variable | Used by | Description
 |----------|---------|------------
 | `sysArgs[0:1]` | `LUP` | rom address of next data byte
 | `sysArgs[2:3]` | `ST+`, `CHANMASK`, `LDMATCH`, `OFFSET` | segment address
 | `sysArgs[4]` | `ST+`, `CHANMASK`, `SLCHK` | segment length
-| `sysArgs[5]` | `OFFSET` and `se:loadGt1z:seg` | initial low segment address byte
+| `sysArgs[5]` | u-prog | initial low segment address byte
 | `sysArgs[6]` | `BL` | link register for subroutine
 | `sysFn` | `LDMATCH`, `OFFSET` | offset for matched copies, initially 1.
-| `vACH` | n/a | saved token describing the current gt1z record.
+| `vACH` | u-prog | saved token describing the current gt1z record.
+| `vACL` | all | accumulator for the u-ops.
 | `VLR` | `VRETNZ` | execution address
 
+* Many of the [micro-ops defined for fsm page 22](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7273) are copies of the similarly named micro-ops defined in page 21 for the loader and often point to their implementation in page 21. Besides general operations on `vACL`, this includes the [`VRETNZ`, `CHANMASK`, and `ST+` micro-ops](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7337-L7358) discussed in the loader section above.
 
+* Micro-op [`LSR4`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7299-L7304), implemented [here](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7151-L7159) and [here](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L3510-L3515), rights shifts `vACL` by four bits in order to extract its high nibble.
+  
+* Micro-op [`BL`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7328-L7335) invokes micro-program subroutines, saving the return address in byte `sysArgs[6]`. For instance, the exec microprogram contains a subroutine](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7398-L7405) to store `sysArg[4]` bytes read from rom address `sysArgs[0:1]` at ram address `sysArgs[2:3]`
 
+* Micro-op [`LUP`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7360-L7382) plays the most important role. It reads the rom byte located at address `sysArgs[0:1]` into `vACL` and also increments `sysArgs[0:1]` to point to the next rom byte, skipping the trampoline located in the end of every page containing lup data. Unlike the vCPU opcode `LUP`, the micro-op `LUP` does not set `vACH` to zero, making `vACH` usable to store the compressed GT1 record token. Implementing this was quite complex because it *forces a cascade of changes described later in this section*.
 
+* Finally, micro-op [`LDMATCH`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7384-L7396) reads a byte in ram located at an address computed by subtracting (without carries) the offset `sysFn` from the current writing address `sysArgs[2:3]`. This is used to implement matched copies in compressed GT1 data.
 
+Armed with these micro-ops, the micro-program first [inspects the first rom bytes](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7384-L7396). If these bytes are not `0x00` and `0xff`, it simply jumps into [micro-code that loads uncompressed GT1 segments](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7407-L7417). After processing the last segment, this code falls through into [final micro-code](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7419-L7431) which restores `sysFn` and uses `VRETNZ` to exit the finite state machine pointing the vCPU to either the address provided in `vLR` or to the execution address read from rom. 
 
+Otherwise the entry micro-code jumps into the compressed GT1 loading routine, obtaining [the first segment address](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7450-L7454), and looping over compressed GT1 records. 
+Each record starts with a [token byte](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7455-L7460) that encodes both the [number of *literal* bytes](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7461-L7465) to [copy from rom](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7466-L7467), and the [number of *matched* bytes](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7468-L7473) to [copy from ram](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7489-L7493) after [extacting the mactching offset](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7474-L7488). A [number of matched bytes equal to zero](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7471) indicates that it is time to start a new segment.
 
+#### Breaking out of micro-programming
 
-
+The [new segment code](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7498-L7511) is not implemented with micro-ops but as a regular fragment of fsm code. Although it could have been implemented with the following micro-code, the direct implementation ends up being more compact. 
 ```python
 label('se:loadGt1z:seg')
 fsmAsm('LD', [vAC+1])
-fsmAsm('AND', 0x80)
-fsmAsm('BZ', 'se:loadGt1z:longseg')
-fsmAsm('LD', [sysArgs+5])
-fsmAsm('ST', sysArgs+2)
+fsmAsm('AND', 0x80)                   # check the high token bit
+fsmAsm('BZ', 'se:loadGt1z:longseg')   # if zero we must get two segment address bytes
+fsmAsm('LD', [sysArgs+5])             # otherwise, we add 256 to the old segment address
+fsmAsm('ST', sysArgs+2)               
 fsmAsm('LD', [sysArgs+3])
 fsmAsm('ADD', 1)
 fsmAsm('ST', sysArgs+3)
 fsmAsm('B', 'se:loadGt1z:token')
 ```
+The same holds that deals with [short offsets](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7513-L7538). Writing this with micro-ops would have required a space in page 22 that was simply not available. Whatever works works!
 
+#### LUP timing changes
 
+Implementing the [`LUP`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7360-L7382) micro-op forced subtle timing changes on the [`LUP`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L2434-L2438) vCPU opcode, first to avoid writing `vACH` when returning from the LUP trampolines, and second to create enough time to increment the LUP pointer `sysArgs[0:1]`.
+
+Whereas the ROMv6 [`LUP`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/ROMv6.asm.py#L1793-L1797) vCPU opcode is implemented in page 3, the DEV7ROM [`LUP`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L2434-L2438) is implemented in [page 32](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L10654-L10664) and clears `vACH` before jumping into the trampoline, four cycles behind the ROMv6 version. After reading the required byte, the trampoline jumps back to the [return code](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L10670-L10675) which has been modified to return to the current dispatcher, be it the vCPU dispatcher (for the `LUP` vCPU opcode), or a finite state machine (for the `LUP` micro-op). 
+
+The code that [writes the LUP trampolines](https://github.com/lb3361/gigatron-rom/blob/doc/Core/asm.py#L215-L223) hardcodes the name `lupReturn#19` and cannot be changed to `lupReturn#23` because it belongs to `asm.py` which is imported by all roms. Changing it would break all other roms. Therefore the DEV7ROM lup return code is also called [`lupReturn#19`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L10669-L10670) even though it runs 23 cycles into the execution slice. 
+
+But this is not all that is needed. The Gigatron also uses the `LUP` opcode to [return from virtual interrupts](https://github.com/lb3361/gigatron-rom/blob/doc/Docs/Interrupts.txt). In DEV7ROM, this takes us into the [vRTI entry point](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L3126-L3131) four cycles behind ROMv6. As a result all the [vRTI code](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L3097-L3123) has been rewritten to account for the new timings. We lucked out here because (a) the timings would not have worked with `maxTicks=14` and (b) space for the new code appeared because the implementation of opcode `INC` has been returned to page 3.
 
 
 ### 5.7. FSM page 33 : extended vIRQ
