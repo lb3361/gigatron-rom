@@ -173,7 +173,7 @@ a shorter sequence that runs faster.
 
 As indicated above, opcode `DEEKA` overwrites `sysArgs7` because it uses it as a temporary during execution.
 This means that it cannot be used with either a source or a destination that overlaps `sysArgs7`.
-The same holds for all instructions documented as thrashing certain registers or sysArg bytes.
+The same holds for all instructions documented as trashing certain registers or sysArg bytes.
 This makes it difficult to use these instructions to prepare SYS call arguments for instance.
 
 
@@ -422,7 +422,7 @@ for conditional jump opcodes.
 | CMPLS  | `35 14`    | max 22+20+24| Signed compare long accumulator `vLAC` with `[vAC]..[vAC]+3`<br>(trashes `sysArgs7`)
 | CMPLU  | `35 16`    | max 22+20+24| Unsigned compare long accumulator `vLAC` with `[vAC]..[vAC]+3`<br>(trashes `sysArgs7`)
 
-As explained before, instructions that thrashes certain sysArg locations cannot use
+As explained before, instructions that trashes certain sysArg locations cannot use
 these locations as either source or destination. However it is possible to use opcode `MOVL`
 with destination `sysArgs0` if the source does not overlap the sysArg array.
 
@@ -452,7 +452,7 @@ whose upper 32 bits overlate the long accumulator `vLAC`.
 
 | Opcode | Encoding      | Cycles     | Function
 | ------ | ----------    | ---------- | -------
-| NEGX   | `35 0e`       | 22+14+24   | Negate the extended accumulator `vLAX`<br>(thrashes `sysArgs[67]`) 
+| NEGX   | `35 0e`       | 22+14+24   | Negate the extended accumulator `vLAX`<br>(trashes `sysArgs[67]`) 
 | MACX   | `35 1c`       | 394 to 842 | Add `vACL` (8 bits) times `sysArgs[0..4]` to `vLAX`<br>(trashes `sysArgs[5-7]`, `vACH`)
 | LSRXA  | `35 18`       | 42 to 322  | Right shift `vLAX` by `vAC & 0x3f` positions<br>(trashes `sysArgs[67]`, `vAC`)
 | LSLXA  | `35 12`       | 38 to 415  | Left shift `vLAX` by `vAC & 0x3f` positions<br>(trashes `sysArgs[67]`, `vAC`)
@@ -490,7 +490,7 @@ by the once popular Microsoft basic interpreters.
 | LDFARG | `35 29`       | typ 72     | Load floating point argument `[vAC]..[vAC]+4`<br>(trashes `vAC` `vT3` `sysArgs[5-7]`)
 
 Opcode `MOVF` merely moves five consecutive bytes in page zero.
-Although it thrashes the sysArg array, it is possible to use opcode `MOVF`
+Although it trashes the sysArg array, it is possible to use opcode `MOVF`
 with destination `sysArgs0` if the source does not overlap the sysArg array.
 
 Opcodes `LDFAC` and `STFAC` respectively unpack and pack a floating
@@ -557,7 +557,7 @@ useful to atomically read-modify-write.
 | -------- | ----------- | ------- | -------
 | VSAVE    | `35 2b`     | ~104    | save full vCPU context into xxe0-xxff<br>(modifies `sysArgs7`)
 | VRESTORE | `35 2d`     | ~126    | restore vCPU context saved in xxe0-xxff<br>(modifies all registers, `sysArgs[0-7]`)
-| EXBA     | `35 31 ii`  |  28+18  | perform ii->[vAC]->vAC atomically<br>(thrashes `sysArgs7`)
+| EXBA     | `35 31 ii`  |  28+18  | perform ii->[vAC]->vAC atomically<br>(trashes `sysArgs7`)
 
 Both `VSAVE` and `VRESTORE` take a page number `xx` in the low byte of
 register `vAC` and use address range `xxe0-xxff` to save or restore
