@@ -67,7 +67,7 @@ dev128k7.rom: Core/* Apps/*/* Makefile interface.json
 		-DWITH_128K_BOARD=1 \
 		-DROMNAME=\"$@\" \
 		${DEV7APPS}\
-		SpiSd=Apps/More/system7.gt1z\
+		SpiSd=Apps/SpiCard/system7.gt1z\
 		Main=Apps/MainMenu/MainMenu_sd.gcl\
 		Reset=Core/Reset.gcl
 
