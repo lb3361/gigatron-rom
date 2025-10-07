@@ -1,0 +1,41 @@
+
+## Code goes after 0x8800
+segments = [ (0x7400, 0x8800, None,   None,   0),   # main hi memory
+             (0x00fa, 0x0200, None,   None,   7),   # ram check stub at location 0x200
+             (0x00fa, 0x0300, None,   None,   7) ]  # expansion testing routine at location 0x300
+
+## Protect zero page vars used by cardboot!
+zpage_reserve(range(0x30, 0x7f), 'CARDBOOT', error_on_conflict=False)
+
+## GT1EXEC
+def map_modules(romtype):
+    ### pretend to be a regular rom (not a devrom)
+    ### to ensure that this file will keep working
+    ### once a suitable rom is released.
+    if romtype and romtype >= 0x80:
+        romtype = 0x48 
+    
+    def code0():
+        org(0x200)
+        label(args.gt1exec)
+        LDWI(initsp);STW(SP);
+        if romtype and romtype >= 0x80:
+            LD('romType');ANDI(0xfc);XORI(romtype);BNE('.err')
+        elif romtype:
+            LD('romType');ANDI(0xfc);SUBI(romtype);BLT('.err')
+        LD('memSize');BNE('.err')
+        LDWI(v(args.e));CALL(vAC)
+        # Machine check fails
+        label('.err')
+        LDW('frameCount');STW(vLR);ANDI(0x7f);BEQ('.err')
+        LDW(vLR);DOKE(vPC+1);BRA('.err')
+    module(name='_gt1exec.s',
+           code=[ ('EXPORT', '_gt1exec'),
+                  ('CODE', '_gt1exec', code0) ] )
+    debug(f"synthetizing module '_gt1exec.s' at address 0x200")
+
+
+# Local Variables:
+# mode: python
+# indent-tabs-mode: ()
+# End:

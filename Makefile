@@ -31,7 +31,6 @@ CFLAGS:=-std=c11 -O3 -Wall
 #	Development
 #-----------------------------------------------------------------------
 
-# Development towards "ROM v6"
 dev.rom: Core/* Apps/*/* Makefile interface.json
 	python3 Core/dev.asm.py\
                 -DROMNAME=\"$@\" \
@@ -41,9 +40,9 @@ dev.rom: Core/* Apps/*/* Makefile interface.json
 		RacerHorizon=Apps/Racer/Horizon-256x16.gt1z\
 		Racer=Apps/Racer/Racer.gt1z\
 		SYS_Racer.py\
+		Rotator=Apps/Rotator/rotator.gt1\
 		Mandelbrot=Apps/Mandelbrot/Mandelbrot_v2.gt1z\
 		Pictures=Apps/Pictures/Pictures_v3.gcl\
-		Bricks=Apps/Bricks/Bricks_v2.gt1z\
 		GtMine=Apps/GtMine/gtmine.gt1z\
 		TinyBASIC=Apps/TinyBASIC/TinyBASIC_v6.gt1z\
 		TicTac=Apps/TicTac/TicTac_v2.gt1z\
@@ -56,6 +55,31 @@ dev.rom: Core/* Apps/*/* Makefile interface.json
 		Boot=Apps/CardBoot/CardBoot_v2.gt1z\
 		Main=Apps/MainMenu/MainMenu.gcl\
 		Reset=Core/Reset.gcl
+
+dev128k.rom: Core/* Apps/*/* Makefile interface.json
+	python3 Core/dev.asm.py\
+                -DROMNAME=\"$@\" \
+		-DDISPLAYNAME=\"DEV128\" \
+		-DWITH_128K_BOARD=1 \
+		SpiCard=Apps/SpiCard/system7.gt1z\
+		RacerHorizon=Apps/Racer/Horizon-256x16.gt1z\
+		Racer=Apps/Racer/Racer.gt1z\
+		SYS_Racer.py\
+		Rotator=Apps/Rotator/rotator.gt1\
+		Mandelbrot=Apps/Mandelbrot/Mandelbrot_v2.gt1z\
+		MSCP=Apps/MSCP/mscp_128k.gt1z\
+		GtMine=Apps/GtMine/gtmine.gt1z\
+		TinyBASIC=Apps/TinyBASIC/TinyBASIC_v6.gt1z\
+		Bricks=Apps/Bricks/Bricks_v2.gt1z\
+		WozMon=Apps/WozMon/WozMon.gt1z\
+		Loader=Apps/Loader/Loader.gt1z\
+		Credits=Apps/Credits/Credits.gt1z\
+		Egg=Apps/Horizon/Horizon_c.gt1z\
+		Main=Apps/MainMenu/MainMenu_128k.gcl\
+		Munching=Apps/Munching6502/Munching6502.gt1\
+		Reset=Core/Reset.gcl
+
+
 
 run: Docs/gtemu $(DEV)
 	# Run ROM in reference emulator on console
@@ -310,43 +334,31 @@ pull:
 	git stash pop
 
 #-----------------------------------------------------------------------
-#	C compiler (LCC retargeted for vCPU)
+#	C compiler
 #-----------------------------------------------------------------------
 
-LCCDIR:=Utils/lcc/build
-export LCCDIR
-LCC:=$(LCCDIR)/lcc
-LCCFLAGS:=-ILibs
-#LCCFLAGS:=-ILibs -Wf-d -Wa-d
+GLCC=Compilers/glcc/build/glcc
 
-lcc:
-	mkdir -p "$(LCCDIR)"
-	mkdir -p "$(LCCDIR)/tst"
-	cd Utils/lcc && env HOSTFILE=etc/gt1h.c make all gttest
+Apps/Horizon/Horizon_c.gt1: Apps/Horizon/src-c/*
+	${MAKE} -C Compilers/glcc && \
+	${MAKE} -C `dirname $@/src-c`
 
-%.o: %.c $(wildcard Libs/*.h)
-	$(LCC) $(LCCFLAGS) -c "$<" -o "$@"
+Apps/Rotator/rotator.gt1: Apps/Rotator/rotator.s
+	${MAKE} -C Compilers/glcc && \
+	${MAKE} -C `dirname $@`
 
-libSources:=$(wildcard Libs/*/*.c)
-libObjects:=$(libSources:.c=.o)
+Apps/Credits/Credits.gt1: Apps/Credits/src/*
+	${MAKE} -C Compilers/glcc && \
+	${MAKE} -C `dirname $@`/src
 
-.SECONDARY: # Instructs 'make' not to delete intermeditate .o files
-%.gt1: %.o $(libObjects)
-	$(LCC) $(LCCFLAGS) $^ -o "$@"
+Apps/GtMine/gtmine.gt1: Apps/GtMine/src/*
+	${MAKE} -C Compilers/glcc && \
+	${MAKE} -C `dirname $@`/src
 
-%.gt1x: %.o $(libObjects)
-	$(LCC) $(LCCFLAGS) $^ -o "$@"
+Apps/MSCP/mscp_128K.gt1 Apps/MSCP/mscp_smallb_128K.gt1: Apps/MSCP/src/*
+	${MAKE} -C Compilers/glcc && \
+	${MAKE} -C `dirname $@`/src
 
-ctest: Libs/Example.gt1
-
-cclean:
-	rm -f Libs/Example.gt1 Libs/*.o Libs/*/*.o
-
-# Moon shot for C compiler: MSCP 1.4 (Marcel's Simple Chess Program)
-# Doesn't work yet. Use as guinea pig to help mature our standard C library
-mscp: Contrib/kervinck/mscp.gt1
-Contrib/kervinck/mscp.o: Contrib/kervinck/mscp.c $(wildcard Libs/*.h)
-	$(LCC) $(LCCFLAGS) -N -P -A -v -c "$<" -o "$@"
 
 #-----------------------------------------------------------------------
 #
