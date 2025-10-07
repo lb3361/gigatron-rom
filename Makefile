@@ -35,19 +35,19 @@ CFLAGS:=-std=c11 -O3 -Wall
 dev.rom: Core/* Apps/*/* Makefile interface.json
 	python3 Core/dev.asm.py\
 		packedPictures=Apps/Pictures/packedPictures.rgb\
-		Snake=Apps/Snake/Snake_v3.gcl\
+		Snake=Apps/Snake/Snake_v3.gt1\
 		SYS_Racer_v1.py\
 		zippedRacerHorizon=Apps/Racer/Horizon-256x16.rgb\
 		Racer=Apps/Racer/Racer_v3.gcl\
 		Mandelbrot=Apps/Mandelbrot/Mandelbrot_v2.gt1\
-		SYS_Loader_v5.py\
 		Pictures=Apps/Pictures/Pictures_v3.gcl\
+		SYS_Loader_v5.py\
 		Bricks=Apps/Bricks/Bricks_v2.gt1\
 		GtMine=Apps/GtMine/gtmine_v1.gt1\
 		TinyBASIC=Apps/TinyBASIC/TinyBASIC_v6.gcl\
 		TicTac=Apps/TicTac/LoadTicTac_v1.gcl\
 		TicTacGtb=Apps/TicTac/TicTac_v2.gtb\
-		WozMon=Apps/WozMon/WozMon_v2.gcl\
+		WozMon=Apps/WozMon/WozMon_v2.gt1\
 		Apple1=Apps/Apple-1/Apple-1_v3.gt1\
 		MSBASIC=Apps/MSBASIC/MSBASIC.gt1\
 		Loader=Apps/Loader/Loader_v4.gcl\
@@ -240,6 +240,12 @@ ROMv1.rom: Core/* Apps/*/* Makefile interface.json
 #	Generic rules
 #-----------------------------------------------------------------------
 
+ifdef COMSPEC
+E=.exe
+else
+E=
+endif
+
 %.gt1: %.gcl
 	Core/compilegcl.py "$<" `dirname "./$@"`
 
@@ -249,6 +255,14 @@ ROMv1.rom: Core/* Apps/*/* Makefile interface.json
 %.gt1: %.vasm.py
 	env PYTHONPATH=Core python3 "$<"
 	mv out.gt1 "$@"
+
+%.gt1z: %.gt1 Utils/gt1z/gt1z${E}
+	Utils/gt1z/gt1z -f "$<" "$@"
+
+Utils/gt1z/gt1z${E}: Utils/gt1z/gt1z.cpp
+	${MAKE} -C Utils/gt1z
+
+.SECONDARY:
 
 %.h: %.gt1
 	# Convert GT1 file into header for including as PROGMEM data
