@@ -31,6 +31,8 @@ segments = [ (0x0060, 0x08a0, 0x0100, 0x80a0, 0),
 
 initsp = 0xfffc
 minram = 0x100
+args.lfss = args.lfss or 128
+
 
 def map_segments():
     '''
@@ -66,7 +68,7 @@ def map_modules(romtype):
     '''
     def code0():
         org(0x200)
-        label(args.gt1exec)
+        label( '_gt1exec')
         # Set stack
         LDWI(initsp);STW(SP);
         # Check rom and ram

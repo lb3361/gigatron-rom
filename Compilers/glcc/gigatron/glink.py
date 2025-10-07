@@ -387,7 +387,7 @@ def hop(sz, jump):
             global the_segment, the_pc
             hops_enabled = False
             the_segment.pc = the_pc
-            lfss = args.lfss or 32
+            lfss = args.lfss or 64
             ns = find_code_segment(max(lfss, sz))
             if not ns:
                 fatal(f"map memory exhausted while fitting function `{the_fragment.name}'")
@@ -1340,7 +1340,7 @@ def _SP(n):
     n = v(n)
     if is_zero(n):
         LDW(SP);
-    elif args.cpu < 6 and is_zeropage(-n):
+    elif is_zeropage(-n):
         LDW(SP); SUBI(-n)
     else:
         _LDI(n); ADDW(SP)
@@ -1400,6 +1400,16 @@ def _MOVIW(d,x):
         MOVIW(d, check_zp(x))
     else:
         _LDI(d);STW(x)
+@vasm
+def _MOVIB(d,x):
+    '''Moves immediate d into byte var x.
+       - Emits MOVQB or a _LDI solution.
+       - May trash vAC.'''
+    d = int(v(d))
+    if args.cpu >= 6:
+        MOVQB(d, check_zp(x))
+    else:
+        _LDI(d);ST(x)
 @vasm
 def _MOVW(s,d):
     '''Moves word var s into word var d.
@@ -3056,7 +3066,10 @@ def glink(argv):
             global new_modules
             new_modules = []
             map_modules(romtype)
-            module_list += new_modules
+            if len(new_modules) > 0:
+                for m in new_modules:
+                    m.library = id(new_modules[0])
+                module_list += new_modules
 
         # load libraries requested by the map
         global map_libraries

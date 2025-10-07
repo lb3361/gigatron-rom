@@ -1,6 +1,7 @@
 
 def scope():
 
+
     # ----------------------------------------
     # LSHL1 : LAC <-- LAC << 1
     # ----------------------------------------
@@ -61,10 +62,11 @@ def scope():
         else:
             PUSH()
             ST(T5);ANDI(16);_BEQ('.l4')
-            LDW(LAC);STW(LAC+2);LDI(0);STW(LAC)
+            LDW(LAC);STW(LAC+2);_MOVIW(0,LAC)
             label('.l4')
             LD(T5);ANDI(8);_BEQ('.l5')
-            LDW(LAC+1);STW(LAC+2);LD(LAC);ST(LAC+1);LDI(0);ST(LAC)
+            LDW(LAC+1);STW(LAC+2)
+            LDW(LAC-1);ORI(0xff);XORI(0xff);STW(LAC)
             label('.l5')
             LD(T5);ANDI(4);_BEQ('.l6')
             LDWI('SYS_LSLW4_46');STW('sysFn')
@@ -73,13 +75,16 @@ def scope():
             LDW(LAC);SYS(46);STW(LAC)
             label('.l6')
             LD(T5);ANDI(3);_BEQ('.ret')
-            label('.l7')
-            ST(T5);
             if args.cpu >= 6:
+                ST(T5)
+                label('.l7')
                 LSLVL(LAC)
+                DBNE(T5,'.l7')
             else:
+                label('.l7')
+                ST(T5)
                 _CALLJ('_@_lshl1')
-            LD(T5);SUBI(1);_BNE('.l7')
+                LD(T5);SUBI(1);_BNE('.l7')
             label('.ret')
             tryhop(2);POP();RET()
 
