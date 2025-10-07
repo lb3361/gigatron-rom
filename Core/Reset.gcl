@@ -8,9 +8,9 @@ gcl0x
 
 { No need for romType check because Reset.gcl gets hard-compiled in  }
 
-_ledTimer=$2d
-
-$1f8 CtrlBits=
+\ledTimer_v7 ledTimer=
+\ledTempo_v7 ledTempo=
+\ctrlBits_v5 CtrlBits=
 
 
 { CheckMemory }
@@ -181,8 +181,8 @@ $1f8 CtrlBits=
 
     1^ [if=0                    {Only 1 means success}
       FindBoot! _sysArgs0=      {Load Boot from ROM and execute}
-      $200 _vLR=
-      \SYS_Exec_88 _sysFn= 88!!]
+      [if=0 pop ret]
+      $200 _vLR= \SYS_Exec_88 _sysFn= 88!!]
 
     j 1- if>0loop]              {Retry}
 
@@ -209,7 +209,7 @@ $1f8 CtrlBits=
 [def
   q=
   \SYS_ReadRomDir_v5_80 _sysFn=
-  0 [do 80!! p=
+  0 [do 80!! p= if<>0
     q deek _sysArgs0^ [if=0
      2 q+ deek _sysArgs2^ [if=0
        4 q+ deek _sysArgs4^ [if=0
@@ -300,8 +300,8 @@ $466 {4: D-4} SetupChannel! {was: $47e {4: D-5} SetupChannel!}
 
 { Restart blinkenlights }
 \ledState_v2, 128&              {Check if sequencer still running}
-[if=0 \ledState_v2. \ledTimer.] {For continuity only restart when paused}
-9 \ledTempo.                    {6.0 Hz ( = 60/(9+1)), was 5.5 Hz}
+[if=0 \ledState_v2. ledTimer.]  {For continuity only restart when paused}
+5 ledTempo.                     {10.0 Hz ( = 60/(5+1)), was 6 Hz}
 
 {
   Print startup message
@@ -314,18 +314,13 @@ $814 Pos=
 [def `***`Gigatron` #0] PrintS!
 CheckMemory!
 [def `K`***` #10
-  ``TTL`microcomputer
-  ``DEVROM #0]                  {ROM`vN for versioned release ROMs}
+  ``TTL`microcomputer`
+  `\DISPLAYNAME #0]             {ROM`vN for versioned release ROMs}
 PrintS!
 
 { Change into default video mode }
 \SYS_SetMode_v2_80 _sysFn=      {!!! Not in ROM v1 !!!}
-
-$a, $fc& $fc^ [if=0             { Test for 512k rom }
-  2    { yes: Mode 2 -> "A-C-" }
- else
-  1    { no:  Mode 1 -> "ABC-"}
-] 80!!
+2 80!!                          {Mode 2}
 
 { Try booting from memory card if there is an expansion card and at least 64K }
 CtrlBits, [if<>0 \memSize, [if=0 CheckCard!]]

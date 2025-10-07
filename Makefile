@@ -34,23 +34,23 @@ CFLAGS:=-std=c11 -O3 -Wall
 # Development towards "ROM v6"
 dev.rom: Core/* Apps/*/* Makefile interface.json
 	python3 Core/dev.asm.py\
+                -DROMNAME=\"$@\" \
+		-DDISPLAYNAME=\"DEVROM\" \
 		packedPictures=Apps/Pictures/packedPictures.rgb\
 		Snake=Apps/Snake/Snake_v3.gt1\
-		SYS_Racer_v1.py\
-		zippedRacerHorizon=Apps/Racer/Horizon-256x16.rgb\
-		Racer=Apps/Racer/Racer_v3.gcl\
+		RacerHorizon=Apps/Racer/Horizon-256x16.gt1z\
+		Racer=Apps/Racer/Racer.gt1\
+		SYS_Racer.py\
 		Mandelbrot=Apps/Mandelbrot/Mandelbrot_v2.gt1\
 		Pictures=Apps/Pictures/Pictures_v3.gcl\
-		SYS_Loader_v5.py\
 		Bricks=Apps/Bricks/Bricks_v2.gt1\
 		GtMine=Apps/GtMine/gtmine_v1.gt1\
-		TinyBASIC=Apps/TinyBASIC/TinyBASIC_v6.gcl\
-		TicTac=Apps/TicTac/LoadTicTac_v1.gcl\
-		TicTacGtb=Apps/TicTac/TicTac_v2.gtb\
+		TinyBASIC=Apps/TinyBASIC/TinyBASIC_v6.gt1\
+		TicTac=Apps/TicTac/TicTac_v2.gt1\
 		WozMon=Apps/WozMon/WozMon_v2.gt1\
 		Apple1=Apps/Apple-1/Apple-1_v3.gt1\
 		MSBASIC=Apps/MSBASIC/MSBASIC.gt1\
-		Loader=Apps/Loader/Loader_v4.gcl\
+		Loader=Apps/Loader/Loader.gt1\
 		Credits=Apps/Credits/Credits_v4.gt1\
 		Egg=Apps/Horizon/Horizon_c_v2.gt1\
 		Boot=Apps/CardBoot/CardBoot_v2.gt1\
