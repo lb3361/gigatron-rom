@@ -1,11 +1,6 @@
 
 def scope():
 
-    def _MOVQB(imm,d):
-        if args.cpu >= 6:
-            MOVQB(imm,d)
-        else:
-            LDI(imm);ST(d)
 
     # ----------------------------------------
     # LSHL1 : LAC <-- LAC << 1
