@@ -38,12 +38,6 @@
 		"info" : "compiles code compatible with both ROMv6 and ROMvX0"
 	      },
 
-    "dev"   : { "cpu" : 5,
-		"inherits" : "v6",
-		"romType" : "0xf8",
-		"info" : "compiles for the official DEVROM"
-	      },
-
     "vx0"   : { "cpu" : 6,
 		"inherits" : "v6",
 		"romType" : "0x80",
@@ -56,7 +50,7 @@
 		"info" : "compiles code that exploits more of at67's ROMvX0 capabilities"
 	      },
     
-    "dev7"  : { "cpu" : 7,
+    "dev"   : { "cpu" : 7,
 		"inherits" : "v6",
 		"romType" : "0xf8",
 		"maxTicks" : 15,
@@ -64,6 +58,12 @@
 		"has_SYS_Multiply_s16" :        { "addr" : "0x9e", "cycs" : 34  },
 		"has_SYS_Divide_u16" :          { "addr" : "0xa1", "cycs" : 34  },
 		"has_SYS_DoubleDabble" :        { "addr" : "0xe0", "cycs" : 34  },
-		"info" : "compiles for lb3361's DEV7ROMs"
+		"info" : "compiles for the cpu7 DEVROM"
+	      },
+
+    "dev7"  : { "cpu" : 7,
+		"inherits" : "dev",
+		"info" : "compiles for the cpu7 DEVROM"
 	      }
+
 }

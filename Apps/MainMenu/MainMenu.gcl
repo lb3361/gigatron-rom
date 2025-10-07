@@ -47,8 +47,8 @@ gcl0x
 ] PrintText=
 
 { Print horizontal line }
- [def
-  push
+[def
+ push
  \SYS_SetMemory_v2_54 _sysFn=
  156 \sysArgs0.
  Color \sysArgs1.

@@ -37,23 +37,23 @@ dev.rom: Core/* Apps/*/* Makefile interface.json
                 -DROMNAME=\"$@\" \
 		-DDISPLAYNAME=\"DEVROM\" \
 		packedPictures=Apps/Pictures/packedPictures.rgb\
-		Snake=Apps/Snake/Snake_v3.gt1\
+		Snake=Apps/Snake/Snake_v3.gt1z\
 		RacerHorizon=Apps/Racer/Horizon-256x16.gt1z\
-		Racer=Apps/Racer/Racer.gt1\
+		Racer=Apps/Racer/Racer.gt1z\
 		SYS_Racer.py\
-		Mandelbrot=Apps/Mandelbrot/Mandelbrot_v2.gt1\
+		Mandelbrot=Apps/Mandelbrot/Mandelbrot_v2.gt1z\
 		Pictures=Apps/Pictures/Pictures_v3.gcl\
-		Bricks=Apps/Bricks/Bricks_v2.gt1\
-		GtMine=Apps/GtMine/gtmine_v1.gt1\
-		TinyBASIC=Apps/TinyBASIC/TinyBASIC_v6.gt1\
-		TicTac=Apps/TicTac/TicTac_v2.gt1\
-		WozMon=Apps/WozMon/WozMon_v2.gt1\
-		Apple1=Apps/Apple-1/Apple-1_v3.gt1\
-		MSBASIC=Apps/MSBASIC/MSBASIC.gt1\
-		Loader=Apps/Loader/Loader.gt1\
-		Credits=Apps/Credits/Credits_v4.gt1\
-		Egg=Apps/Horizon/Horizon_c_v2.gt1\
-		Boot=Apps/CardBoot/CardBoot_v2.gt1\
+		Bricks=Apps/Bricks/Bricks_v2.gt1z\
+		GtMine=Apps/GtMine/gtmine.gt1z\
+		TinyBASIC=Apps/TinyBASIC/TinyBASIC_v6.gt1z\
+		TicTac=Apps/TicTac/TicTac_v2.gt1z\
+		WozMon=Apps/WozMon/WozMon.gt1z\
+		Apple1=Apps/Apple-1/Apple-1_v3.gt1z\
+		MSBASIC=Apps/MSBASIC/MSBASIC.gt1z\
+		Loader=Apps/Loader/Loader.gt1z\
+		Credits=Apps/Credits/Credits.gt1z\
+		Egg=Apps/Horizon/Horizon_c.gt1z\
+		Boot=Apps/CardBoot/CardBoot_v2.gt1z\
 		Main=Apps/MainMenu/MainMenu.gcl\
 		Reset=Core/Reset.gcl
 

@@ -167,7 +167,7 @@ TSTBK2FILES=$(wildcard ${G}tst/*.2bk)
 TSTX=${patsubst ${G}tst/%.1bk,${B}tst/%.gt1, ${TSTBK1FILES}}
 TSTO=${patsubst ${G}tst/%.1bk,${B}tst/%.xx1, ${TSTBK1FILES}}
 
-ifeq (${ROM},dev7)
+ifeq (${ROM},dev)
 TSTS=${patsubst ${G}tst/%.2bk,${B}tst/%.s, ${TSTBK2FILES}}
 endif
 
