@@ -95,8 +95,8 @@ if __name__ == '__main__':
     try:
         sys.exit(main(sys.argv[1:]))
     except RuntimeError as err:
-        print(f"gt1z: error: {str(err)}")
+        print(f"imgtogt1: error: {str(err)}")
     except Exception as err:
-        print(f"gt1z: error: {repr(err)}")
+        print(f"imgtogt1: error: {repr(err)}")
     sys.exit(10)
 
