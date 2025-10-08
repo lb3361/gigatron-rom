@@ -1,4 +1,34 @@
 #!/usr/bin/env python3
+#
+#-----------------------------------------------------------------------
+# Derived from Marcel van Kervinck gigatron-rom version
+#  
+#  BSD 2-Clause License
+#  
+#  Copyright (c) 2017,2018,2019, Marcel van Kervinck
+#  All rights reserved.
+#  
+#  Redistribution and use in source and binary forms, with or without
+#  modification, are permitted provided that the following conditions are met:
+#  
+#  * Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+#  
+#  * Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#  
+#  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+#  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+#  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+#  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+#  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+#  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+#  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+#  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+#  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+#  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
 #-----------------------------------------------------------------------
 #
 #  gt1dump.py -- Tool to dump GT1 files to ASCII
@@ -8,6 +38,9 @@
 # 2019-05-19 (marcelk) Check for bad segment size; Small numbers in decimal
 # 2019-10-20 (marcelk) Disassemble CALLI, CMPHU, CMPHS
 # 2020-02-23 (marcelk) Disassemble v6502 instructions
+# 2021-11-07 (lb3361)  Option -dv to disassemble vCPU only
+# 2021-11-07 (lb3361)  Option -p to disassemble with profiler information
+# 2023-01-28 (lb3361)  Dev7rom opcodes
 #
 #-----------------------------------------------------------------------
 
@@ -15,6 +48,7 @@ import argparse
 import pathlib
 import re
 import sys
+import bisect
 
 # One-for-all error handler (don't throw scary stack traces at the user)
 sys.excepthook = lambda exType, exValue, exTrace: print('%s: %s: %s' % (__file__, exType.__name__,  exValue), file=sys.stderr)
@@ -52,13 +86,26 @@ opcodes = [
     0x75: ('PUSH',  0), 0x7f: ('LUP',   1), 0x82: ('ANDI',  1),
     0x85: ('CALLI', 2), 0x88: ('ORI',   1), 0x8c: ('XORI',  1),
     0x90: ('BRA',   1), 0x93: ('INC',   1), 0x97: ('CMPHU', 1),
-    0x99: ('ADDW',  1), 0xad: ('PEEK',  0), 0xb4: ('SYS',   1),
+    0x99: ('ADDW',  1), 0xad: ('PEEK',  0), 0xb4: ('SYS', 'S'),
     0xb8: ('SUBW',  1), 0xcd: ('DEF',   1), 0xcf: ('CALL',  1),
     0xdf: ('ALLOC', 1), 0xe3: ('ADDI',  1), 0xe6: ('SUBI',  1),
     0xe9: ('LSLW',  0), 0xec: ('STLW',  1), 0xee: ('LDLW',  1),
     0xf0: ('POKE',  1), 0xf3: ('DOKE',  1), 0xf6: ('DEEK',  0),
     0xf8: ('ANDW',  1), 0xfa: ('ORW',   1), 0xfc: ('XORW',  1),
     0xff: ('RET',   0),
+    # DEV7 opcodes
+    0x18: ('NEGV',  1),  0x33: ('ADDHI', 1),
+    0x39: ('POKEA', 1),  0x3b: ('DOKEA', 1),  0x3d: ('DEEKA', 1),
+    0x3f: ('JEQ',  'J'), 0x41: ('DEEKV', 1),  0x44: ('DOKEQ', 1),
+    0x46: ('POKEQ', 1),  0x48: ('MOVQB','M'), 0x4a: ('MOVQW','M'),
+    0x4d: ('JGT',  'J'), 0x50: ('JLT',  'J'), 0x53: ('JGE',  'J'),
+    0x56: ('JLE',  'J'), 0x66: ('ADDV',  1),  0x68: ('SUBV',  1),
+    0x6a: ('LDXW', 'X'), 0x6c: ('STXW', 'X'), 0x6e: ('LDSB',  1),
+    0x70: ('INCV',  1),  0x72: ('JNE',  'J'),
+    0x7a: ('DBNE', 'E'), 0x7d: ('MULQ',  1),
+    0xb1: ('MOVIW','K'), 0xbb: ('MOVW', 'M'), 0xc6: ('ADDSV','D'),
+    0xd3: ('CMPWS', 1),  0xd6: ('CMPWU', 1),  0xd9: ('CMPIS', 1),
+    0xdb: ('CMPIU', 1),  0xdd: ('PEEKV', 1),  0xe1: ('PEEKA', 1)
   },
   { # [1] is v6502
     0: ('BRK',0),      1: ('ORAIX',1),
@@ -128,18 +175,67 @@ opcodes = [
  }
 ]
 
-bccCodes = {
-  0x3f: 'EQ', 0x4d: 'GT', 0x50: 'LT', 0x53: 'GE', 0x56: 'LE', 0x72: 'NE',
+opcodes35 = {
+  0x00: ('ADDL',  0),  0x02: ('COPYS',  'T'), 0x04: ('SUBL',  0),
+  0x06: ('ANDL',  0),  0x08: ('ORL',     0),  0x0a: ('XORL',  0),
+  0x0c: ('NEGVL', 1),  0x0e: ('NEGX',    0),  0x10: ('LSLVL', 1),
+  0x12: ('LSLXA', 0),  0x14: ('CMPLS',   0),  0x16: ('CMPLU', 0),
+  0x18: ('LSRXA', 0),  0x1a: ('RORX',    0),  0x1c: ('MACX',  0),
+  0x1e: ('LDLAC', 0),  0x20: ('STLAC',   0),  0x23: ('INCVL', 1),
+  0x25: ('STFAC', 0),  0x27: ('LDFAC',   0),  0x29: ('LDFARG',0),
+  0x2b: ('VSAVE', 0),  0x2d: ('VRESTORE',0),
+  0x32: ('LEEKA', 1),  0x34: ('LOKEA',   1),
+  0x39: ('RDIVS', 1),  0x3b: ('RDIVU',   1),  0x3d: ('MULW',  1),
+  0x3f: ('BEQ',   1),  0x48: ('BLIT',    0),  0x4a: ('FILL',  0),
+  0x4d: ('BGT',   1),  0x50: ('BLT',     1),
+  0x53: ('BGE',   1),  0x56: ('BLE',     1),
+  0x63: ('DOKEI','I'), 0x72: ('BNE',     1),  0x7d: ('RESET', 0),
+  0xcb: ('COPY',  0),  0xcf: ('COPYN',   1),
+  0xd1: ('EXBA',  1),  0xd3: ('NOTVL',   1),
+  0xdb: ('MOVL', 'M'), 0xdd: ('MOVF',   'M'),
 }
+
+def insSys(asm):
+  byte = int(asm[-2:], 16)
+  if byte != 128:
+    maxCycles = 28-2*((byte^128)-128)
+    return asm[:-3] + ('%d' % maxCycles)         # maxCycles in decimal
+  return 'HALT'                                  # Never executes
+
+insTypes = {
+  'J': (2, # Jcc instructions
+        lambda asm: asm[:-2] + ("%02x" % (255 & (int(asm[-2:], 16)+2))) ),
+  'M': (2, # Mov instructions
+        lambda asm: asm[:-2] + "," + zpSym(asm[-2:]) ),
+  'X': (3, # LDWX STWX
+        lambda asm: asm[:-7] + zpSym(asm[-2:]) + ",$" + asm[-6:-2] ),
+  'K': (3, # MOVIW
+        lambda asm: asm[:-6] + asm[-4:-2] + asm[-6:-4] + "," + zpSym(asm[-2:]) ),
+  'D': (2, # ADDSV
+	lambda asm: asm[:-4] + asm[-4:-2] + "," + zpSym(asm[-2:]) ),
+  'T': (2, # COPYS
+        lambda asm: asm[:-4] + asm[-2:] + "," + zpSym(asm[-4:-2]) ),
+  'I': (2, # DOKEI
+        lambda asm: asm[:-4] + asm[-2:] + asm[-4:-2] ),
+  'E': (2, # DBNE
+        lambda asm: asm[:-7] + zpSym((int(asm[-2:],16) - 2) & 0xff) +
+            (",$%s" % asm[-4:-2]) + ("%02x" % ((int(asm[-6:-4],16) + 2) & 0xff)) ),
+  'S': (1, # SYS
+        lambda asm: insSys(asm) ),
+}
+
+bccInsVcpu = ['BNE', 'BEQ', 'BGT', 'BLT', 'BGE', 'BLE', 'BRA', 'DEF', 'DBNE']
 
 bccIns6502 = ['BNE', 'BEQ', 'BCC', 'BCS', 'BVC', 'BVS', 'BMI', 'BPL']
 
 def zpMode(ins):
   # vCPU instructions that work on zero page
   if ins in ['LD', 'LDW', 'STW', 'ST',
-             'INC', 'ADDW', 'SUBW', 'CALL',
+             'INC', 'ADDW', 'SUBW', 'CALL', 'ADDV', 'SUBV'
              'POKE', 'DOKE', 'ANDW', 'ORW',
-             'XORW', 'CMPHS', 'CMPHU']:
+             'INCV', 'INCVL', 'NEGV', 'NEGVL', 'LSLVL', 'NOTVL',
+             'DOKEA', 'POKEA', 'DEEKA', 'PEEKA', 'DEEKV', 'PEEKV',
+             'XORW', 'CMPHS', 'CMPHU', 'CMPWS', 'CMPWU']:
     return True
   # v6502 instructions that work on zero page
   if ins[3:] in ['Z', 'ZX', 'ZY', 'IX', 'IY']:
@@ -148,37 +244,55 @@ def zpMode(ins):
   return False
 
 zeroPageSyms = {
- 0x00: 'zeroConst',
- 0x01: 'memSize',
- 0x06: 'entropy',
- 0x09: 'videoY',
- 0x0e: 'frameCount',
- 0x0f: 'serialRaw',
- 0x11: 'buttonState',
- 0x14: 'xoutMask',
- 0x16: 'vPC',
- 0x17: 'vPC+1',
- 0x18: 'vAC',
- 0x19: 'vAC+1',
- 0x1a: 'vLR',
- 0x1b: 'vLR+1',
- 0x1c: 'vSP',
- 0x21: 'romType',
- 0x22: 'sysFn',
- 0x23: 'sysFn+1',
- 0x24: 'sysArgs+0',
- 0x25: 'sysArgs+1',
- 0x26: 'sysArgs+2',
- 0x27: 'sysArgs+3',
- 0x28: 'sysArgs+4',
- 0x29: 'sysArgs+5',
- 0x2a: 'sysArgs+6',
- 0x2b: 'sysArgs+7',
- 0x2c: 'soundTimer',
- 0x2e: 'ledState_v2',
- 0x2f: 'ledTempo',
- 0x80: 'oneConst',
+  0x00: 'zeroConst',
+  0x01: 'memSize',
+  0x06: 'entropy',
+  0x09: 'videoY',
+  0x0e: 'frameCount',
+  0x0f: 'serialRaw',
+  0x11: 'buttonState',
+  0x14: 'xoutMask',
+  0x16: 'vPC',
+  0x17: 'vPC+1',
+  0x18: 'vAC',
+  0x19: 'vAC+1',
+  0x1a: 'vLR',
+  0x1b: 'vLR+1',
+  0x1c: 'vSP',
+  0x1d: 'vSP+1',
+  0x21: 'romType',
+  0x22: 'sysFn',
+  0x23: 'sysFn+1',
+  0x24: 'sysArgs+0',
+  0x25: 'sysArgs+1',
+  0x26: 'sysArgs+2',
+  0x27: 'sysArgs+3',
+  0x28: 'sysArgs+4',
+  0x29: 'sysArgs+5',
+  0x2a: 'sysArgs+6',
+  0x2b: 'sysArgs+7',
+  0x2c: 'soundTimer',
+  0x2e: 'ledState_v2',
+  0x80: 'oneConst',
+  0x81: 'vFAS',
+  0x82: 'vFAE',
+  0x83: 'vLAX',
+  0x84: 'vLAC',
+  0x85: 'vLAC+1',
+  0x86: 'vLAC+2',
+  0x87: 'vLAC+3',
+  0x88: 'vT2',
+  0x89: 'vT2+1',
+  0x8a: 'vT3',
+  0x8b: 'vT3+1',
 }
+
+def zpSym(v):
+  if type(v) == str:
+    v = int(v, 16)
+  if v in zeroPageSyms:
+    return zeroPageSyms[v]
+  return '$%02x' % v
 
 def readByte(fp):
   byte = fp.read(1)
@@ -202,11 +316,13 @@ else:
   fp = sys.stdin.buffer # Note: `buffer` for binary mode
 
 prof = None
+profa = None
 if args.prof:
   with open(args.prof) as f:
     gb = {}
     exec(f.read(), gb)
     prof = gb['prof']
+    profa = sorted(prof.keys())
   
 hiAddress = readByte(fp)
 
@@ -223,7 +339,7 @@ while True:
     raise Exception('Bad size %d for segment $%04x' % (segmentSize, address))
 
   j, text = 0, ''
-  ins, ops = None, 0
+  ins, instyp, ops = None, None, 0
   insaddr = None
   for i in range(segmentSize):
 
@@ -231,9 +347,8 @@ while True:
 
     if args.disassemble and hiAddress > 0:      # Attempt disassembly
       if ops == 0:                              # Not in instruction yet
-
         # Decide what instruction set we're in
-        ins = None
+        ins = instyp = None
         if byte in opcodes[cpuType].keys():     # First probe the last ISA
           ins, ops = opcodes[cpuType][byte]
         elif args.disassemble == True:
@@ -242,45 +357,47 @@ while True:
             cpuType = xCpu                      # Swap if second is valid
             cpuTag = '[v6502]' if xCpu else '[vCPU]'
             ins, ops = opcodes[cpuType][byte]
-
         if ins:
+          if ops in insTypes:
+            instyp = ops
+            ops = insTypes[instyp][0]
           if j > 0:                             # Force new line
             print('%s|%s|' % ((51-j)*' ', text))
             j, text = 0, ''
           insaddr = address+i
-          asm = '%-5s' % ins                    # Format mnemonic
-
-      else:                                     # Already in instruction
-        if len(asm) > 5 and ops == 1:
-          asm = asm[:-2] + ('%02x' % byte) + asm[-2:]
-        elif zpMode(ins) and ops == 1 and byte in zeroPageSyms:
-          if byte == 0x00 and ins[-1] == 'W':
-            asm += ' ' + zeroPageSyms[1] + '-1' # Special case top of memory
-          else:
-            asm += ' ' + zeroPageSyms[byte]     # Known address
-        elif ins == 'Bcc' and ops == 2 and byte in bccCodes:
-          asm = 'B%-4s' % bccCodes[byte]
-        elif ins in ['BRA', 'DEF'] or (ins == 'Bcc' and ops == 1):# Branch vCPU
-          asm += ' $%02x%02x' % (hiAddress, (byte+2)&255)
-        elif ins in bccIns6502:                 # Relative branch v6502
-          to = address + i + 1 + (byte ^ 128) - 128
-          asm += ' $%04x' % (to & 0xffff)
-        elif ins == 'SYS':                      # Operand to SYS
-          if byte != 128:
-            maxCycles = 28-2*((byte^128)-128)
-            asm += ' %d' % maxCycles            # maxCycles in decimal
-          else:
-            asm = 'HALT'                        # Never executes
-        else:
-          asm += ' $%02x' % byte                # Default as hex byte
+          asm = '%-6s' % ins                    # Format mnemonic
+      elif ins == 'Bcc' and not cpuType and byte in opcodes35 :
+        ins, ops = opcodes35[byte]
+        if ops in insTypes:
+          instyp = ops
+          ops = insTypes[instyp][0]
+        asm = '%-6s' % ins
+      elif '$' in asm:
+        idx = asm.index('$')
+        asm = asm[:idx+1] + ('%02x' % byte) + asm[idx+1:]
         ops -= 1
-
+      elif cpuType and ins in bccIns6502:                 # Relative branch v6502
+        to = address + i + 1 + (byte ^ 128) - 128
+        asm += ' $%04x' % (to & 0xffff)
+        ops -= 1
+      elif not cpuType and ins in bccInsVcpu:             # Relative branch vCpu
+        to = (address & 0xff00) + ((byte + 2) & 255)
+        asm += ' $%04x' % (to & 0xffff)
+        ops -= 1
+      elif zpMode(ins) and ops == 1 and not instyp and byte in zeroPageSyms:
+        if byte == 0x00 and ins[-1] == 'W':
+          asm += ' ' + zeroPageSyms[1] + '-1' # Special case top of memory
+        else:
+          asm += ' ' + zeroPageSyms[byte]     # Known address
+        ops -= 1
+      else:
+        asm = asm + (' $%02x' % byte)
+        ops -= 1
+        
     if j == 0:                                  # Address on each new line
       print('%04x ' % (address + i), end='')
-
     print(' %02x' % byte,  end='')              # Print byte as hex value
     j += 3
-
     if j == 8*3:                                # Visual divider
       print(' ', end='')
       j += 1
@@ -290,16 +407,24 @@ while True:
     if ops == 0:
       if ins:
         # Print as disassembled instruction
+        # -- Reformat operands
+        if instyp:
+          asm = insTypes[instyp][1](asm)
         # Convert single digit operand to decimal
         asm = re.sub(r'\$0([0-9])$', r'\1', asm)
         prefix, cpuTag = (25 * ' ') + cpuTag, ''
         if prof:
-          cycs='#%d' % prof[insaddr] if insaddr in prof else ''
+          cycs=''
+          if insaddr in prof:
+            c = prof[insaddr]
+            p = bisect.bisect_left(profa, insaddr)
+            if p and p > 0:
+              c = c - prof[profa[p-1]]
+            cycs = '#%d' % c
           print('%s %-25s %-13s|%s|' % (prefix[-25+j:], asm, cycs, text))
         else:
           print('%s %-25s|%s|' % (prefix[-25+j:], asm, text))
         ins, j, text = None, 0, ''
-
       elif (address + i) & 15 == 15 or i == segmentSize - 1:
         # Print as pure data
         print('%s|%s|' % ((51-j)*' ', text))
