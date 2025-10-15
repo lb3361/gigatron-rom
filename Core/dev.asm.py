@@ -1069,15 +1069,22 @@ ld([vAC+1])                     #17
 # Extension SYS_ScanMemoryExt_v6_50
 #-----------------------------------------------------------------------
 
-# SYS function for searching a byte in a 0 to 256 bytes string located
-# in a different bank. Doesn't cross page boundaries. Returns a
-# pointer to the target if found or zero. Temporarily deselects SPI
-# devices.
+# SYS function for searching bytes in a different memory bank.
+# This function examines bytes starting from address sysArgs[01] with
+# the selected bank mapped at addresses 0x8000-0xffff. It stops when
+# encountering a byte equal to either sysArgs[2] or sysArgs[3], or
+# when vACL bytes have been examined, whichever comes first. It does
+# not cross page boudaries but wraps around in page sysArgs[1].
 #
-# sysArgs[0:1]            Start address
-# sysArgs[2], sysArgs[3]  Bytes to locate in the string
-# vACL                    Length of the string (0 means 256)
-# vACH                    Bit 6 and 7 contain the bank number
+# Input:
+#   sysArgs[01]        Start address of the string
+#   sysArgs[23]        Bytes to search
+#   vACL               Length of the string (0 means 256)
+#   vACH               Bits 7 and 6 select the bank mapped in 0x8000-0xffff.
+#
+# If a matching byte is found, its address is returned in vAC and
+# sysArgs[01].  Otherwise, zero is returned in vAC and sysArgs[0]
+# point right after the string.
 
 label('SYS_ScanMemoryExt_v6_50')
 ld(hi('sys_ScanMemoryExt'),Y)   #15 slot 0xe3
@@ -1089,18 +1096,26 @@ ld([vAC+1])                     #17
 # Extension SYS_ScanMemory_v6_50
 #-----------------------------------------------------------------------
 
-# SYS function for searching a byte in a 0 to 256 bytes string.
-# Returns a pointer to the target if found or zero.  Doesn't cross
-# page boundaries.
+# SYS function for searching bytes in memory.
+# This function examines bytes starting from address sysArgs[01] and
+# stops when encountering a byte equal to either sysArgs[2] or
+# sysArgs[3], or when vACL bytes have been examined, whichever comes
+# first.  It does not cross page boudaries but wraps around in the
+# page, leaving sysArgs[1] unchanged.
 #
-# sysArgs[0:1]            Start address
-# sysArgs[2], sysArgs[3]  Bytes to locate in the string
-# vACL                    Length of the string (0 means 256)
+# Inputs:
+#   sysArgs[01]        Start address of the string
+#   sysArgs[23]        Bytes to search
+#   vACL               Length of the string (0 means 256)
+#
+# If a matching byte is found, its address is returned in vAC and sysArgs[01].
+# Otherwise, zero is returned in vAC and sysArgs[0] point right after the string.
 
 label('SYS_ScanMemory_v6_50')
 ld(hi('sys_ScanMemory'),Y)      #15 slot 0xe6
 jmp(Y,'sys_ScanMemory')         #16
 ld([sysArgs+1],Y)               #17
+
 
 #-----------------------------------------------------------------------
 # Extension SYS_CopyMemory_v6_80
