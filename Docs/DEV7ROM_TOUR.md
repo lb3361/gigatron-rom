@@ -134,7 +134,7 @@ DEV7ROM introduces substantial changes to the page zero variables:
 
 ### 3.1. Registers
 
-Space has been allocated for new vCPU registers, including a 16 bit extension `vSPH` of the stack pointer `vSP`, source and destination pointers `vT3` and `vT3` for copy iteration, an accumulator `vLAC` for 32 bits integers, which can become part of a floating point accumulator when used with bytes `vLAX`, `vFAE`, `vFAS` respectively containing a mantissa extension, a floating point exponent, and sign information. 
+Space has been allocated for new vCPU registers, including a 16 bit extension `vSPH` of the stack pointer `vSP`, source and destination pointers `vT2` and `vT3` for copy iteration, an accumulator `vLAC` for 32 bits integers, which can become part of a floating point accumulator when used with bytes `vLAX`, `vFAE`, `vFAS` respectively containing a mantissa extension, a floating point exponent, and sign information. 
 
 Except for the stack pointer extension `vSPH`, these registers occupy [the 0x81-0x8b region](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L424-L429) that follows the constant one at location `0x80`.
 Variables named [`userVars2_vX`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L430) have been introduced to clearly identify the beginning of the user available locations in the upper half of page zero. However, programs that only rely on the ROMv6 vCPU opcodes are free to use the locations affected to these registers. 
@@ -183,9 +183,9 @@ The [ROM initialization code](https://github.com/lb3361/gigatron-rom/blob/doc/Co
 
 ## 4. vCPU changes
 
-The initial goal of DEV7ROM was to provide a way to run a large program such as [MSCP](https://forum.gigatron.io/viewtopic.php?p=3617#p3617) on the 128K Gigatron. The 128KB of memory are divided in four 32KB banks. Address range `0x0000-0x7fff` always shows bank zero. Address range `0x8000-0xffff` shows any of the four banks according to bits 6 and 7 of the argument of the native `clrl` instruction. Since both the video loop and the vCPU see the same memory banks, the 64KB address space seen by the vCPU always contains the framebuffer. That does not leave enough space to run MSCP.  The solution was to have the ROM swap banks on the fly, using the selected bank when vCPU instructions are executed, but reverting to bank 1 when the ROM runs the video output code. To do this fast enough, one needs two page zero location to cache the control bits for both memory configuration. To find such locations without breaking compatibility, some other variables need to be displaced into safe location. 
+The initial goal of DEV7ROM was to provide a way to run a large program such as [MSCP](https://forum.gigatron.io/viewtopic.php?p=3617#p3617) on the 128K Gigatron. The 128KB of memory are divided in four 32KB banks. Address range `0x0000-0x7fff` always shows bank zero. Address range `0x8000-0xffff` shows any of the four banks according to bits 6 and 7 of the argument of the native `clrl` instruction. Since both the video loop and the vCPU see the same memory banks, the 64KB address space seen by the vCPU always contains the framebuffer. That does not leave enough space to run MSCP.  The solution was to have the ROM swap banks on the fly, using the selected bank when vCPU instructions are executed, but reverting to bank 1 when the ROM runs the video output code. To do this fast enough, one needs two page zero location to cache the control bits for both memory configuration. To find such locations some variables had to be moved to different locations. 
 
-Hence came the idea to make space for these relocated variables by shortening the six bytes reset handler `vReset` at address 0x1f0. Instead of having it invoke a secret SYS call, we can use a secret vCPU opcode. And since there is no space in page 3 for such an instruction, we can take advantage from the fact that all conditional branch opcodes start with prefix `0x35` and reorganize them in a manner that makes room for additional prefix opcodes such as `RESET`.  So it all starts with the conditional branch opcodes.
+Hence came the idea to make space for these relocated variables by shortening the six bytes reset handler `vReset` at address 0x1f0. Instead of having it invoke a secret SYS call, we can use a secret vCPU opcode. And since there is no space in page 3 for such an instruction, we can extend the encoding of the conditional branch opcodes to provide new opcodes starting with prefix `0x35`.  So it all starts with the conditional branch opcodes.
 
 ### 4.1. Conditional branch opcodes
 
@@ -207,13 +207,9 @@ The rest now happens in page 23
 [`BGT`, `BLT`, `BGE`, `BLE`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7806-L7846), [`BNE`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7871-L7886), and also [here](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L7900-L7909).) 
 Except for the fact that some of these entry points are very close to each other, there is much more space to implement the branch opcodes efficiently. In the end the new branch instructions are faster than the original ones.
 
-However, as a result, plenty of space has been freed in both the main vCPU implementation page (page 3) and prefix `0x35` implementation page (page 23). In particular the page 3 location whose addresses match the second byte of the `Bcc` instructions were now empty. 
-These locations are now used for conditional branch instructions `Jcc` that accept two byte addresses and could cross page boundaries 
-([`JEQ`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L2264-L2270), 
-[`JGT`, `JLT`, `JGE`, `JLE`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L2305-L2338), 
-and [`JNE`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L2400-2407).) 
+However, as a result, plenty of space has been freed in both the main vCPU implementation page (page 3) and prefix `0x35` implementation page (page 23). The page 3 locations corresponding the condition byte of the branch instructions have been repurposed for new conditional branch instructions `Jcc` that accept two byte addresses and can cross page boundaries ([`JEQ`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L2264-L2270), [`JGT`, `JLT`, `JGE`, `JLE`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L2305-L2338), and [`JNE`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L2400-2407).) 
 Since the page 3 code for these instructions merely contains jumps to their 
-[actual implementation](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L8627-L8710), plenty of space in page 3 was still available for new opcodes.
+[actual implementation](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L8627-L8710), there was still plenty of space for new opcodes.
 
 ### 4.2. Reset sequence
 
@@ -230,7 +226,7 @@ Meanwhile a new instruction [`RESET`](https://github.com/lb3361/gigatron-rom/blo
 
 The constant `maxTicks` represents the half of the number of cycles needed to even consider scheduling a vCPU opcode execution. As of ROMv6, all official ROMs use `maxTicks=14` and therefore expect that, absent shenanigans, all vCPU opcode implementation must return within 28 cycles. DEV7ROM uses [`maxTicks=15`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L472) by DEV7ROM because it provides two additional cycles for implementing more ambitious vCPU instructions.
 
-Using `maxTicks=15` has been [pionnered by at67](https://forum.gigatron.io/viewtopic.php?t=281&hilit=maxticks), this change has proven to be surprisingly useful and problem free with two notable exceptions:
+Using `maxTicks=15` has been [pionnered by at67](https://forum.gigatron.io/viewtopic.php?t=281&hilit=maxticks), this change has proven to be very useful and surprisingly problem free, with two notable exceptions:
 
 * Changing `maxTicks` messes up the virtual IRQ code. This has in fact been fixed in ROMv6 [already](https://github.com/lb3361/gigatron-rom/blob/doc/Core/ROMv6.asm.py#L2430).
 * Incrementing `maxTicks` changes the interpretation of the argument of the `SYS` vcpu opcode. Calling the `SYS` opcode with the same argument byte causes it to wait for an execution window that is two cycles longer than required. Alas this can be a problem when running [video mode zero](https://forum.gigatron.io/viewtopic.php?p=4115#p4115) because the longest vCPU window available during vertical blanking is 134 cycles long, just enough to run `SYS_VDrawBit` which is extensively used to display text. As explained in the post, this is fixed with by [shaving two cycles](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L1410-L1455) in the vertical blanking part of the video loop. 
@@ -246,11 +242,11 @@ The [`ALLOC`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L2
 
 ### 4.4. Opcodes
 
-DEV7ROM implements a substantial number of additional vCPU opcodes. These opcodes are documented [here](https://github.com/lb3361/gigatron-rom/blob/doc/Docs/vCPU7.md). Many of these additional opcodes, and most certainly the most complex ones, use the memory locations `sysArg0` to `sysArg7` as working variables. In particular, variable `sysArg7` is used by all opcodes that rely on a finite state machine. This is always indicated in the [documentation](https://github.com/lb3361/gigatron-rom/blob/doc/Docs/vCPU7.md) because this means that these opcodes cannot be used to read or write the `sysArgs` array to prepare a SYS call. 
+DEV7ROM implements a substantial number of additional vCPU opcodes. These opcodes are documented [here](https://github.com/lb3361/gigatron-rom/blob/doc/Docs/vCPU7.md). Many of these additional opcodes, and most certainly the most complex ones, use some of the `sysArgs[0:7]` bytes as working variables. In particular, variable `sysArg7` is used by all opcodes that rely on a finite state machine. This is always indicated in the [documentation](https://github.com/lb3361/gigatron-rom/blob/doc/Docs/vCPU7.md) because it often means that these opcodes cannot be used to read or write the `sysArgs[0:7]` array, for instance to prepare a SYS call. 
 
-As of ROMv6, all official gigatron ROMs implement or dispatch all vCPU opcodes from page 3. Although all conditional branch opcodes start with prefix `0x35`, their secondary bytes, which specifies the condition, is also dispatched in page 3. DEV7ROM changes this by dispatching the byte that follows prefix `0x35` in a different page, page 23. Hence there are two kind of vCPU opcodes, those implemented or dispatched in page 3, and those that start with prefix `0x35`, implemented or dispatched in page 23.
+As of ROMv6, all official gigatron ROMs implement or dispatch all vCPU opcodes from page 3. Although all conditional branch opcodes start with prefix `0x35`, their secondary bytes, which specifies the condition, is also dispatched in page 3. In contrast, DEV7ROM features two kind of vCPU opcodes, those that are dispatched in page 3, and those that start with prefix `0x35` and are dispatched in page 23.
 
-We can also distinguish opcodes according to their implementation. Some are entirely implemented in the dispatch page to ensure speed. Many opcodes simply jump to their actual implementation in a different page. Finally a number of new opcodes are implemented by setting up a finite state machine that sequences implementation fragments in successive vCPU execution slices and eventually returns to the regular vCPU execution process. This is explained in [this post](https://forum.gigatron.io/viewtopic.php?p=3714#p3714) and additional details can be found in the next section of this document.
+We can also distinguish opcodes according to their implementation. Some are entirely implemented in the dispatch page to ensure speed. Others jump to their actual implementation in a different page. Finally a number of new opcodes are implemented by setting up a finite state machine that sequences the execution of multiple code fragments in the vCPU time slices, then eventually returns to the regular vCPU execution process. This is explained in [this post](https://forum.gigatron.io/viewtopic.php?p=3714#p3714) and additional details can be found in the next section of this document.
 
 * Direct implementation in page 3 offers the best speed and therefore is used for the most frequently used vCPU opcodes such as [`LDW`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L2199-L2211) or [`ADDW`](https://github.com/lb3361/gigatron-rom/blob/doc/Core/dev.asm.py#L2486-L2511).
 * Jumping to an out-of-page implementation from page 3 typically costs three to four additional cycles but only requires two or three bytes in page 3. Therefore all ROM versions contain many such instructions as explained in this [very old comment](https://github.com/lb3361/gigatron-rom/blob/doc/Core/ROMv1.asm.py#L1512-L1517).
@@ -313,8 +309,7 @@ These official opcodes are explained in the [vCPU summary](https://github.com/lb
 
 #### New vCPU opcodes dispatched in page 3
 
-The following table lists the new opcodes implemented in page 3 and points to their implementation.
-These opcodes are explained in the [vCPU7 documentation](https://github.com/lb3361/gigatron-rom/blob/doc/Docs/vCPU7.md).
+The following table lists the new opcodes implemented in page 3 and points to their implementation. These opcodes are explained in the [vCPU7 documentation](https://github.com/lb3361/gigatron-rom/blob/doc/Docs/vCPU7.md).
 
 | Opcode name | Encoding   | Implementation
 |-------------|------------|-------
