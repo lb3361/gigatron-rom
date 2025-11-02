@@ -76,7 +76,7 @@ dev512k7.rom: Core/* Apps/*/* Makefile interface.json
 		-DROMNAME=\"$@\" -DDISPLAYNAME=\"[512k7]\"\
 		-DWITH_512K_BOARD=1 \
 		${DEV7APPS}\
-		SpiSd=Apps/More/system7.gt1z\
+		SpiSd=Apps/SpiCard/system7.gt1z\
 		Main=Apps/MainMenu/MainMenu_sd.gcl\
 		Reset=Core/Reset.gcl
 
