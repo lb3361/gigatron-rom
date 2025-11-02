@@ -143,7 +143,7 @@ namespace Spi {
   SDCard::SDCard(int num)
     : Device(num), idle(1), state(0), count(0), len(0), fd(0)
   {
-    buffer = new uint8_t[512];
+    buffer = new uint8_t[520];
   }
 
   SDCard::~SDCard()
