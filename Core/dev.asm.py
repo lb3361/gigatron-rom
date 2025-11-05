@@ -1191,7 +1191,7 @@ align(0x100, size=0x100)
 
 vBlankFirstExtra = 0
 vBlankEnterCyc = 200
-vVisibEnterCyc = 200 if not WITH_128K_BOARD else 199
+vVisibEnterCyc = 200
 
 
 # ------- videoZ
@@ -1257,7 +1257,10 @@ adda([ledState_v2])             #57
 label('.leds#58')
 bne(pc()+3)                     #58
 bra(pc()+3)                     #59
-ld(-24)                         #60 State 0 becomes -24, start of sequence
+if not WITH_128K_BOARD:
+  ld(-24)                       #60 State 0 becomes -24, start of sequence
+else:
+  ld(-12)                       #60 Reduced sequence for dev128k7.rom
 bgt('.leds#62')                 #60(!) Catch the stopped state (>0)
 st([ledState_v2])               #61
 adda('.leds#65')                #62
@@ -1281,24 +1284,26 @@ ld(0b1111)                      #65 LEDs |****| offset -24 Low 4 bits are the LE
 ld(0b0111)                      #65 LEDs |***O|
 ld(0b0011)                      #65 LEDs |**OO|
 ld(0b0001)                      #65 LEDs |*OOO|
-ld(0b0010)                      #65 LEDs |O*OO|
-ld(0b0100)                      #65 LEDs |OO*O|
-ld(0b1000)                      #65 LEDs |OOO*|
-ld(0b0100)                      #65 LEDs |OO*O|
-ld(0b0010)                      #65 LEDs |O*OO|
-ld(0b0001)                      #65 LEDs |*OOO|
+if not WITH_128K_BOARD:
+  ld(0b0010)                    #65 LEDs |O*OO|
+  ld(0b0100)                    #65 LEDs |OO*O|
+  ld(0b1000)                    #65 LEDs |OOO*|
+  ld(0b0100)                    #65 LEDs |OO*O|
+  ld(0b0010)                    #65 LEDs |O*OO|
+  ld(0b0001)                    #65 LEDs |*OOO|
 ld(0b0011)                      #65 LEDs |**OO|
 ld(0b0111)                      #65 LEDs |***O|
 ld(0b1111)                      #65 LEDs |****|
 ld(0b1110)                      #65 LEDs |O***|
 ld(0b1100)                      #65 LEDs |OO**|
 ld(0b1000)                      #65 LEDs |OOO*|
-ld(0b0100)                      #65 LEDs |OO*O|
-ld(0b0010)                      #65 LEDs |O*OO|
-ld(0b0001)                      #65 LEDs |*OOO|
-ld(0b0010)                      #65 LEDs |O*OO|
-ld(0b0100)                      #65 LEDs |OO*O|
-ld(0b1000)                      #65 LEDs |OOO*|
+if not WITH_128K_BOARD:
+  ld(0b0100)                    #65 LEDs |OO*O|
+  ld(0b0010)                    #65 LEDs |O*OO|
+  ld(0b0001)                    #65 LEDs |*OOO|
+  ld(0b0010)                    #65 LEDs |O*OO|
+  ld(0b0100)                    #65 LEDs |OO*O|
+  ld(0b1000)                    #65 LEDs |OOO*|
 ld(0b1100)                      #65 LEDs |OO**|
 ld(0b1110)                      #65 LEDs |O***| offset -1
 label('.leds#65')
@@ -1358,27 +1363,12 @@ st([vReturn])                   #80
 # vCPU interrupt
 ld([frameCount])                #81
 bne('vBlankFirst#84')           #82
-ld([Y,vIRQ_v5+1])               #83
-ora([Y,vIRQ_v5])                #84
-bne('vBlankFirst#87')           #85
-runVcpu_new(vBlankEnterCyc-vBlankFirstExtra-86,
-    '---D line 0 timeout no irq' )
-
+ld(hi('vBlankFirst#86'),Y)      #83
+jmp(Y,'vBlankFirst#86')         #84
+ld(1,Y)                         #85
 label('vBlankFirst#84')
 runVcpu_new(vBlankEnterCyc-vBlankFirstExtra-84,
     '---D line 0 no timeout' )  #84
-
-label('vBlankFirst#87')
-ld(1,Y)                         #87
-ld([Y, vIrqCtx_v7])             #88
-bne('vBlankFirst#91')           #89
-ld(hi('vBlankIrq#93'),Y)        #90
-jmp(Y,'vBlankIrq#93')           #91 old irq
-ld(1,Y)                         #92
-label('vBlankFirst#91')
-jmp(Y, 'vBlankNewIrq#93')       #91 new irq
-ld(AC,Y)                        #92
-
 
 
 # ------- first vblank line
@@ -1806,20 +1796,50 @@ else:
   # Code for the Gigatron / Gigatron 128K
 
   if WITH_128K_BOARD:
-    fillers(until=0xfe)
+    fillers(until=0xe3)
     label('vVisibEnter')
-    assert(vVisibEnterCyc == 199)
-    ld([ctrlVideo],X)           #199
-    bra('sound3')               #200,0 <New scan line start>
+    assert(vVisibEnterCyc == 200)
+    ld([ctrlVideo],X)             #200,0 <New scan line start>
+    ctrl(X)                       #1 Reset banking to page1.
+    anda([channelMask])           #2 
+    adda(1)                       #3
+    ld(syncBits^hSync,OUT)        #4 Start horizontal pulse
+    st([channel],Y)               #5 
+    ld(0x7f)                      #6  Copying the sound code
+    anda([Y,oscL])                #7  prevents losing one precious
+    adda([Y,keyL])                #8  cycle in a branch to sound3
+    st([Y,oscL])                  #9
+    anda(0x80,X)                  #10
+    ld([X])                       #11
+    adda([Y,oscH])                #12
+    adda([Y,keyH])                #13
+    st([Y,oscH] )                 #14
+    anda(0xfc)                    #15
+    xora([Y,wavX])                #16
+    ld(AC,X)                      #17
+    ld([Y,wavA])                  #18
+    ld(soundTable>>8,Y)           #19
+    adda([Y,X])                   #20
+    bmi(pc()+3)                   #21
+    bra(pc()+3)                   #22
+    anda(63)                      #23
+    ld(63)                        #23
+    adda([sample])                #24
+    st([sample])                  #25
+    ld([xout])                    #26
+    assert(pc()&0xff == 0xff)
+    bra([nextVideo])              #27
     align(0x100, size=0x100)
-    ctrl(X)                     #1 Reset banking to page1.
+    ld(syncBits,OUT)              #28 End horizontal pulse
+
+    
   else:
     fillers(until=0xff)
     label('vVisibEnter')
     assert(vVisibEnterCyc == 200)
-    bra('sound3')               #200,0 <New scan line start>
+    bra('sound3')                 #200,0 <New scan line start>
     align(0x100, size=0x100)
-    ld([channel])               #1 AC already contains [channel]
+    ld([channel])                 #1 AC already contains [channel]
 
   # Back porch A: first of 4 repeated scan lines
   # - Fetch next Yi and store it for retrieval in the next scan lines
@@ -5823,9 +5843,34 @@ align(0x100, size=0x100)
 #       Extended vertical blank logic: interrupts
 #-----------------------------------------------------------------------
 
-# Standard IRQ logic
+label('vBlankFirst#86')
+ld([Y,vIRQ_v5+1])               #86
+ora([Y,vIRQ_v5])                #87
+beq('vBlankFirst#90')           #88
+ld([Y, vIrqCtx_v7])             #89
+beq('vBlankFirst#92')           #90
+nop()                           #91
+ld(AC,Y)                        #92
+ld([Y,0xff])                    #93 irqMask
+bne('vBlankFirst#96')           #94
+st([Y,0xfe])                    #95 irqFlag
+ld(hi('vIRQ#99'),Y)             #96 ctx irq
+jmp(Y,'vIRQ#99')                #97
+ld(1,Y)                         #98
 
-label('vBlankIrq#93')
+# No IRQ vector
+label('vBlankFirst#90')
+runVcpu_new(vBlankEnterCyc-vBlankFirstExtra-90,
+    '---D line 0 timeout no irq' )
+
+# Masked IRQ
+label('vBlankFirst#96')
+runVcpu_new(vBlankEnterCyc-vBlankFirstExtra-96,
+    '---D line 0 timeout masked irq' )
+
+# Standard IRQ
+label('vBlankFirst#92')
+ld(1,Y)                         #92
 ld([vPC])                       #93
 st([vIrqSave+0])                #94 Save vPC
 ld([vPC+1])                     #95
@@ -5844,21 +5889,7 @@ st([vPC+1])                     #107
 ld(hi('ENTER'))                 #108 Set vCpuSelect to ENTER (=regular vCPU)
 st([vCpuSelect])                #109
 runVcpu_new(vBlankEnterCyc-vBlankFirstExtra-110,
-            '---D line 0 timeout irq')
-
-# New IRQ logic
-
-label('vBlankNewIrq#93')
-ld([Y,0xff])                    #93 irqMask
-bne('vBlankFirst#96')           #94
-st([Y,0xfe])                    #95 irqFlag
-ld(hi('vIRQ#99'),Y)             #96 ctx irq
-jmp(Y,'vIRQ#99')                #97
-ld(1,Y)                         #98
-
-label('vBlankFirst#96')
-runVcpu_new(vBlankEnterCyc-vBlankFirstExtra-96,
-    '---D line 0 timeout masked' )
+            '---D line 0 timeout std irq')
 
 
 #-----------------------------------------------------------------------
