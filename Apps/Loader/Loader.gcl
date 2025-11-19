@@ -37,6 +37,10 @@ $5006 Pos=                      {Overwrite the text that MainMenu left behind}
 [def ``Ready`to`load #0] Text=
 [do Text, if<>0 Text<++ PrintChar! loop]
 
+{ Enable all sound channels }
+\channelMask_v4, 3| \channelMask_v4.
+
+
 {-----------------------------------------------------------------------+
 |                       Using SYS_Loader                                |
 +-----------------------------------------------------------------------}

@@ -109,6 +109,7 @@ export class Loader {
      */
 
     loadGt1(data) {
+        let channels = 0x3;
         let offset = 0;
         let execaddr = 0x200;
         while (true) {
@@ -117,6 +118,9 @@ export class Loader {
             let size = data.getUint8(offset);
             offset += 1;
             size = (size == 0) ? 256 : size;
+            if (!(((addr >> 8) - 1) & 0xfc) &&
+                !(((addr & 0xff) + size + 1) & 0xfe) )
+                channels = 0;
             for (let i = 0; i < size; i++) {
                 this.cpu.ram[addr] = data.getUint8(offset);
                 offset += 1;
@@ -130,6 +134,8 @@ export class Loader {
                 break;
             }
         }
+        // Set channelMask
+        this.cpu.ram[0x21] |= channels;
         // Set the vPC and vLR exec address
         this.cpu.ram[0x16] = (execaddr - 2) & 0xff;
         this.cpu.ram[0x17] = (execaddr >> 8) & 0xff;
