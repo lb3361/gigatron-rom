@@ -185,9 +185,16 @@ WITH_128K_BOARD = defined('WITH_128K_BOARD')
 # practice supports only one connected device on one of the first
 # WITH_SPI_BITS channels. Hans61 7400-based board with two channels
 # and Alastair's Gigasaur work best with WITH_SPI_BITS=2.
-
 WITH_SPI_BITS = defined('WITH_SPI_BITS', 2)
 
+# Variable WITH_AUDIO_BITS defines the number of audio bits.  The
+# normal Gigatron has 4 audio bits. Experimental hardware can
+# use 6 or 8 audio bits by stealing led wires.
+WITH_AUDIO_BITS = defined('WITH_AUDIO_BITS', 4)
+
+# Led bits --
+# Which xout bits represents leds.
+ledBits = 0xff >> WITH_AUDIO_BITS
 
 # Rom name --
 # This is the stem of the target rom name
@@ -1280,34 +1287,34 @@ ld(0xf)                         #62 Maintain stopped state
 st([ledState_v2])               #63
 bra('.leds#66')                 #64
 anda([xoutMask])                #65
-ld(0b1111)                      #65 LEDs |****| offset -24 Low 4 bits are the LED output
-ld(0b0111)                      #65 LEDs |***O|
-ld(0b0011)                      #65 LEDs |**OO|
-ld(0b0001)                      #65 LEDs |*OOO|
+ld(0b1111 & ledBits)            #65 LEDs |****| offset -24 Low 4 bits are the LED output
+ld(0b0111 & ledBits)            #65 LEDs |***O|
+ld(0b0011 & ledBits)            #65 LEDs |**OO|
+ld(0b0001 & ledBits)            #65 LEDs |*OOO|
 if not WITH_128K_BOARD:
-  ld(0b0010)                    #65 LEDs |O*OO|
-  ld(0b0100)                    #65 LEDs |OO*O|
-  ld(0b1000)                    #65 LEDs |OOO*|
-  ld(0b0100)                    #65 LEDs |OO*O|
-  ld(0b0010)                    #65 LEDs |O*OO|
-  ld(0b0001)                    #65 LEDs |*OOO|
-ld(0b0011)                      #65 LEDs |**OO|
-ld(0b0111)                      #65 LEDs |***O|
-ld(0b1111)                      #65 LEDs |****|
-ld(0b1110)                      #65 LEDs |O***|
-ld(0b1100)                      #65 LEDs |OO**|
-ld(0b1000)                      #65 LEDs |OOO*|
+  ld(0b0010 & ledBits)          #65 LEDs |O*OO|
+  ld(0b0100 & ledBits)          #65 LEDs |OO*O|
+  ld(0b1000 & ledBits)          #65 LEDs |OOO*|
+  ld(0b0100 & ledBits)          #65 LEDs |OO*O|
+  ld(0b0010 & ledBits)          #65 LEDs |O*OO|
+  ld(0b0001 & ledBits)          #65 LEDs |*OOO|
+ld(0b0011 & ledBits)            #65 LEDs |**OO|
+ld(0b0111 & ledBits)            #65 LEDs |***O|
+ld(0b1111 & ledBits)            #65 LEDs |****|
+ld(0b1110 & ledBits)            #65 LEDs |O***|
+ld(0b1100 & ledBits)            #65 LEDs |OO**|
+ld(0b1000 & ledBits)            #65 LEDs |OOO*|
 if not WITH_128K_BOARD:
-  ld(0b0100)                    #65 LEDs |OO*O|
-  ld(0b0010)                    #65 LEDs |O*OO|
-  ld(0b0001)                    #65 LEDs |*OOO|
-  ld(0b0010)                    #65 LEDs |O*OO|
-  ld(0b0100)                    #65 LEDs |OO*O|
-  ld(0b1000)                    #65 LEDs |OOO*|
-ld(0b1100)                      #65 LEDs |OO**|
-ld(0b1110)                      #65 LEDs |O***| offset -1
+  ld(0b0100 & ledBits)          #65 LEDs |OO*O|
+  ld(0b0010 & ledBits)          #65 LEDs |O*OO|
+  ld(0b0001 & ledBits)          #65 LEDs |*OOO|
+  ld(0b0010 & ledBits)          #65 LEDs |O*OO|
+  ld(0b0100 & ledBits)          #65 LEDs |OO*O|
+  ld(0b1000 & ledBits)          #65 LEDs |OOO*|
+ld(0b1100 & ledBits)            #65 LEDs |OO**|
+ld(0b1110 & ledBits)            #65 LEDs |O***| offset -1
 label('.leds#65')
-anda(0xf)                       #65 Always clear sound bits
+anda(ledBits)                   #65 Clear sound bits (0x0f)
 label('.leds#66')
 st([xoutMask])                  #66 Sound bits will be re-enabled below
 ld(vPulse*2)                    #67 vPulse default length when not modulated
@@ -1351,7 +1358,7 @@ bra('.sound01')                 #75
 ld(0)                           #76
 label('.sound00')
 st([soundTimer])                #75
-ld(0xf0)                        #76
+ld(ledBits ^ 0xff)              #76 (0xf0)
 label('.sound01')
 ora([xoutMask])                 #77
 st([xoutMask])                  #78
@@ -1462,7 +1469,7 @@ else:
 label('vbSample#49')
 if not WITH_512K_BOARD:
     ld([sample])                #49
-    ora(0x0f)                   #50 New sound sample is ready
+    ora(ledBits)                #50 New sound sample is ready
     anda([xoutMask])            #51
     st([xout])                  #52
     st(sample, [sample])        #53 Reset for next sample
@@ -1474,10 +1481,10 @@ else:
     bmi('.vbSample#53')         #51
     ld([sample])                #52
     bra('.vbSample#55')         #53
-    ora(0x0f)                   #54
+    ora(ledBits)                #54
     label('.vbSample#53')
     ctrl(Y,0xD0)                #53 instead of #43 (wrong by ~2us)
-    ora(0x0f)                   #54
+    ora(ledBits)                #54
     label('.vbSample#55')
     anda([xoutMask])            #55
     st([xout])                  #56
@@ -1700,7 +1707,7 @@ if WITH_512K_BOARD:
   ld('videoD')                    #29 3rd scanline of 4
   st([nextVideo])                 #30
   ld([sample])                    #31 New sound sample is ready (didn't fit in audio loop)
-  ora(0x0f)                       #32
+  ora(ledBits)                    #32
   anda([xoutMask])                #33
   st([xout])                      #34 Update [xout] with new sample (4 channels just updated)
   ld([frameX],X)                  #35
@@ -1920,7 +1927,7 @@ else:
   ld('videoD')                    #29 3rd scanline of 4
   st([nextVideo])                 #30
   ld([sample])                    #31 New sound sample is ready (didn't fit in audio loop)
-  ora(0x0f)                       #32
+  ora(ledBits)                    #32 0x0f
   anda([xoutMask])                #33
   st([xout])                      #34 Update [xout] with new sample (4 channels just updated)
   st(sample, [sample])            #35 Reset for next sample
