@@ -133,6 +133,14 @@ $(function() {
         $('#error-modal').modal();
     }
 
+    /** parameters */
+
+    const params = new URLSearchParams(window.location.search);
+    let audiobits = params && (params.get('audiobits')|0);
+    let arg_rom = params && params.get('rom');
+
+    /** construct */
+
     let cpu = new Gigatron({
         hz: HZ,
         romAddressWidth: 16,
@@ -156,7 +164,7 @@ $(function() {
 
     let blinkenLights = new BlinkenLights(cpu);
 
-    let audio = new Audio(cpu);
+    let audio = new Audio(cpu, audiobits);
 
     let gamepad = new Gamepad(cpu, {
         up: ['ArrowUp'],
@@ -209,7 +217,7 @@ $(function() {
     function loadGt1(file) {
         gamepad.stop();
         spi.stop();
-        loader.load(file)
+        return loader.load(file)
             .pipe(finalize(() => {
                 gamepad.start();
                 spi.start();
@@ -226,10 +234,10 @@ $(function() {
             });
     }
 
-    function loadRomFile(file) {
+    function loadRom(file) {
         gamepad.stop();
         spi.stop();
-        loader.loadRom(file)
+        return loader.loadRom(file)
             .pipe(finalize(() => {
                 gamepad.start();
                 spi.start();
@@ -245,7 +253,6 @@ $(function() {
                 </p>`)),
             });
     }        
-
     
     loadFileInput
         .on('click', (event) => {
@@ -257,7 +264,7 @@ $(function() {
                 let file = target.files[0];
                 let name = file.name.toLowerCase()
                 if (name.endsWith('.rom')) {
-                    loadRomFile(file)
+                    loadRom(file)
                 } else if (name.endsWith('.vhd')) {
                     spi.loadvhdfile(file);
                 } else {
@@ -287,7 +294,7 @@ $(function() {
                     let file = files[0];
                     let name = file.name.toLowerCase()
                     if (name.endsWith('.rom')) {
-                        loadRomFile(file);
+                        loadRom(file);
                     } else if (name.endsWith('.vhd')) {
                         spi.loadvhdfile(file);
                         setVhdLabel();
@@ -300,18 +307,24 @@ $(function() {
 
     let timer = 0;
     let lastdate = 0;
+    let cycles = 0.0;
+
+    /** stop the simulation loop */
+    function stopRunLoop() { // eslint-disable-line
+        clearTimeout(timer);
+        gamepad.stop();
+    }
 
     /** start the simulation loop */
     function startRunLoop() {
         gamepad.start();
-        lastdate = Date.now()
+        lastdate = audio.drain();
         timer = setInterval(() => {
             /* Self correcting simulation speed */
-            let newdate = Date.now()
-            let cycles = cpu.hz * Math.min(newdate-lastdate, 30)/1000
+            let newdate = audio.drain();
+            cycles += cpu.hz * Math.min(newdate-lastdate, 0.1);
             lastdate = newdate
-            audio.drain();
-            while (cycles-- >= 0 && !audio.full) {
+            while (--cycles > 0) {
                 cpu.tick();
                 vga.tick();
                 audio.tick();
@@ -320,10 +333,8 @@ $(function() {
             }
             blinkenLights.tick(); // don't need realtime update
             gamepad.tick();
-        }, audio.duration * 500);
-
-        audio.context.resume();
-
+        }, 20);
+	
         // Chrome suspends the AudioContext on reload
         // and doesn't allow it to be resumed unless there
         // is user interaction
@@ -333,48 +344,34 @@ $(function() {
             vga.ctx.textBaseline = 'middle';
             vga.ctx.font = '4em sans-serif';
             vga.ctx.fillText('Click to start', 320, 240);
-            vgaCanvas.on('click', (event) => {
+            $(document).on('click', (event) => {
                 audio.context.resume();
-                vgaCanvas.off('click');
+                $(document).off('click');
             });
         }
     }
 
-    /** stop the simulation loop */
-    function stopRunLoop() { // eslint-disable-line
-        clearTimeout(timer);
-        gamepad.stop();
-    }
-
     /** load the ROM image from url */
-    function loadRom(url) {
-        var req = new XMLHttpRequest();
-        req.open('GET', url);
-        req.responseType = 'arraybuffer';
-        /* req.setRequestHeader('accept-encoding','gzip'); */
-        req.onload = (event) => {
-            if (req.status != 200) {
-                showError($(`\
-                    <p>\
-                        Could not load ROM from <code>${url}</code>\
-                    </p>\
-                    <hr>\
-                    <p class="alert alert-danger">\
-                        <span class="oi oi-warning"></span> ${req.statusText}\
-                    </p>`));
-            } else {
-                let dataView = new DataView(req.response);
-                let wordCount = dataView.byteLength >> 1;
-                // convert to host endianess
-                for (let wordIndex = 0; wordIndex < wordCount; wordIndex++) {
-                    cpu.rom[wordIndex] = dataView.getUint16(2 * wordIndex);
-                }
-                startRunLoop();
-            }
-        };
-
-        req.send(null);
+    function loadRomUrl(url ) {
+        gamepad.stop()
+        spi.stop();
+        return loader.loadRomUrl(url)
+            .pipe(finalize(() => {
+                gamepad.start();
+                spi.start();
+            }))
+            .subscribe({
+                error: (error) => showError($(`\
+                <p>\
+                   Could not load ROM from <code>${url}</code>\
+                </p>\
+                <hr>\
+                <p class="alert alert-danger">\
+                    <span class="oi oi-warning"></span> ${error.message}\
+                </p>`)),
+            });
     }
 
-    loadRom(romUrl);
+    startRunLoop(); // nothing bad happens...
+    loadRomUrl(arg_rom || romUrl);
 });

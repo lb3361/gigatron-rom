@@ -8,7 +8,7 @@ export class Audio {
      * Create an Audio.
      * @param {Gigatron} cpu - The CPU
      */
-    constructor(cpu) {
+    constructor(cpu, audiobits) {
         this.cpu = cpu;
         let context = this.context = new AudioContext();
 
@@ -19,6 +19,7 @@ export class Audio {
         this.alpha = 0.99;
         this.scheduled = 0;
         this.full = false;
+	this.audiobits = audiobits
 
         let numSamples = Math.floor(SAMPLES_PER_SECOND / 50);
         this.buffers = [];
@@ -28,12 +29,10 @@ export class Audio {
                 SAMPLES_PER_SECOND);
             this.buffers.push(buffer);
         }
-
+	let duration = this.buffers[0].duration;
         this.headBufferIndex = 0;
         this.tailBufferIndex = 0;
-        this.duration = this.buffers[0].duration;
-        this.tailTime = 0; // time at which tail buffer will start
-        this.headTime = this.duration; // time at which head buffer will end
+        this.headTime = this.tailTime = this.context.currentTime + 4*duration;
         this.channelData = this.buffers[0].getChannelData(0);
         this.sampleIndex = 0;
     }
@@ -45,23 +44,24 @@ export class Audio {
         let headBufferIndex = this.headBufferIndex;
         let scheduled = this.scheduled;
         let numBuffers = this.buffers.length;
-
         while (scheduled > 0 && headTime < currentTime) {
-            headBufferIndex = (headBufferIndex == numBuffers - 1) ? 0 :
-                (headBufferIndex + 1);
-            headTime += this.duration;
+            headBufferIndex = headBufferIndex + 1;
+	    if (headBufferIndex >= numBuffers)
+		headBufferIndex = 0;
+            headTime += this.buffers[headBufferIndex].duration;
             scheduled--;
         }
-
         this.headTime = headTime;
+	this.headBufferIndex = headBufferIndex;
         this.scheduled = scheduled;
         this.full = scheduled == numBuffers;
+	return currentTime;
     }
 
     /** flush current tail buffer */
     _flushChannelData() {
+        let currentTime = this.drain();
         let context = this.context;
-        let currentTime = context.currentTime;
         let tailBufferIndex = this.tailBufferIndex;
         let buffer = this.buffers[tailBufferIndex];
         let scheduled = this.scheduled;
@@ -69,31 +69,28 @@ export class Audio {
 
         /* if the tail can't keep ahead of realtime, jump it to now */
         if (this.tailTime < currentTime) {
-            // console.log('audio skip');
-            this.tailTime = currentTime;
-            this.headTime = currentTime + this.duration;
+	    /* console.log('skip %o',currentTime - this.tailTime); */
+            this.headTime = this.tailTime = currentTime + 3*buffer.duration;
             this.headBufferIndex = tailBufferIndex;
             scheduled = 0;
         }
-
         if (!this.mute) {
             let source = context.createBufferSource();
             source.buffer = buffer;
             source.connect(context.destination);
             source.start(this.tailTime);
         }
-
         scheduled++;
-        this.tailTime += this.duration;
-
-        tailBufferIndex = (tailBufferIndex == numBuffers - 1) ? 0 :
-            (tailBufferIndex + 1);
-
+        this.tailTime += buffer.duration;
+        tailBufferIndex = tailBufferIndex + 1;
+	if (tailBufferIndex >= numBuffers)
+            tailBufferIndex = 0;
         this.channelData = this.buffers[tailBufferIndex].getChannelData(0);
-        this.sampleIndex = 0;
         this.tailBufferIndex = tailBufferIndex;
         this.scheduled = scheduled;
         this.full = scheduled == numBuffers;
+	/* if (this.full) console.log('full'); */
+        this.sampleIndex = 0;
     }
 
     /** advance simulation by one tick */
@@ -101,14 +98,20 @@ export class Audio {
         this.cycle += SAMPLES_PER_SECOND;
         if (this.cycle >= this.cpu.hz) {
             this.cycle -= this.cpu.hz;
-
-            let sample = (this.cpu.outx >> 4) / 8;
-            this.bias = (this.alpha * this.bias) + ((1 - this.alpha) * sample);
-            sample = (sample - this.bias) * this.volume;
-            this.channelData[this.sampleIndex++] = sample;
-
-            if (this.sampleIndex == this.channelData.length) {
-                this._flushChannelData();
+	    if (! this.full) {
+		let sample;
+		if (this.audiobits >= 8) {
+		    sample = (this.cpu.outx >> 0) / 128;
+		} else if (this.audiobits >= 6) {
+		    sample = (this.cpu.outx >> 2) / 32;
+		} else {
+		    sample = (this.cpu.outx >> 4) / 8;
+		}
+		this.bias = (this.alpha * this.bias) + ((1 - this.alpha) * sample);
+		sample = (sample - this.bias) * this.volume;
+		this.channelData[this.sampleIndex++] = sample;
+		if (this.sampleIndex == this.channelData.length)
+                    this._flushChannelData();
             }
         }
     }

@@ -1,16 +1,6 @@
 
-/* This version of the loader uses the Gigatron loader protocol to load a Gt1 file */
-
-
-import {
-    HSYNC,
-    VSYNC,
-} from './vga.js';
-
-import {
-    BUTTON_DOWN,
-    BUTTON_A,
-} from './gamepad.js';
+/* This version of the loader uses the Gigatron
+   loader protocol to load a Gt1 file */
 
 const {
     Observable,
@@ -26,6 +16,20 @@ const {
     concatAll,
     finalize,
 } = rxjs.operators;
+
+const {
+    fromFetch
+} = rxjs.fetch;
+
+import {
+    HSYNC,
+    VSYNC,
+} from './vga.js';
+
+import {
+    BUTTON_DOWN,
+    BUTTON_A,
+} from './gamepad.js';
 
 const MAX_PAYLOAD_SIZE = 60;
 const START_OF_FRAME = 'L'.charCodeAt(0);
@@ -53,6 +57,7 @@ function replicate(count, observable) {
     return Observable.create(go);
 }
 
+
 /** Loader */
 export class Loader {
     /** Create a new Loader
@@ -63,12 +68,9 @@ export class Loader {
         this.strobes = new Subject();
     }
 
-    /** load a gt1 file
-     * @param {File} file
-     * @return {Observable}
-     */
-    load(file) {
-        return this.readFile(file).pipe(
+    /* loading gt1 files */
+    loadSub(obs) {
+        return obs.pipe(
             concatMap((buffer) => {
                 let data = new DataView(buffer);
                 return concat(
@@ -95,14 +97,26 @@ export class Loader {
                 this.cpu.inReg = 0xff;
             }));
     }
-
-     /** load a rom file
-     * @paranm {File} file
+    /** load a gt1 file
+     * @param {File} file
      * @return {Observable}
      */
+    load(file) {
+        return this.loadSub(this.readFile(file));
+    }
+    /** load a gt1 url
+     * @param {String} url
+     * @return {Observable}
+     */
+    loadUrl(url) {
+        return this.loadSub(fromFetch(url, {
+            selector: response => response.arrayBuffer()
+        }));
+    }
 
-    loadRom(file) {
-        return this.readFile(file).pipe(
+    /* loading rom files */
+    loadRomSub(obs) {
+        return obs.pipe(
             concatMap((buffer) => {
                 let data = new DataView(buffer);
                 for(let i = 0; i < 65536; i++) {
@@ -115,6 +129,22 @@ export class Loader {
                     }),
                     EMPTY ) })
         );
+    }
+    /** load a rom file
+     * @paran {File} file
+     * @return {Observable}
+     */
+    loadRom(file) {
+        return this.loadRomSub(this.readFile(file));
+    }
+    /** load a rom url
+     * @paran {String} url
+     * @return {Observable}
+     */
+    loadRomUrl(url) {
+        return this.loadRomSub(fromFetch(url, {
+            selector: response => response.arrayBuffer()
+        }));
     }
 
     /** read a file returning a Promise

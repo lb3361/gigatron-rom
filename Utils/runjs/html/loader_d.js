@@ -16,6 +16,10 @@ const {
     concatAll,
 } = rxjs.operators;
 
+const {
+    fromFetch
+} = rxjs.fetch;
+
 
 /** Loader */
 export class Loader {
@@ -40,13 +44,10 @@ export class Loader {
         }
     }
     
-    /** load a gt1 file
-     * @param {File} file
-     * @return {Observable}
-     */
-    load(file) {
+    /* loading gt1 files */
+    loadSub(obs) {
         this.findsysexec();
-        return this.readFile(file).pipe(
+        return obs.pipe(
             concatMap((buffer) => {
                 let data = new DataView(buffer);
                 return concat(
@@ -61,14 +62,26 @@ export class Loader {
                     }) );
             }) );
     }
-
-    /** load a rom file
-     * @paranm {File} file
+    /** load a gt1 file
+     * @param {File} file
      * @return {Observable}
      */
+    load(file) {
+        return this.loadSub(this.readFile(file));
+    }
+    /** load a gt1 url
+     * @param {String} url
+     * @return {Observable}
+     */
+    loadUrl(url) {
+        return this.loadSub(fromFetch(url, {
+            selector: response => response.arrayBuffer()
+        }));
+    }
 
-    loadRom(file) {
-        return this.readFile(file).pipe(
+    /* loading rom files */
+    loadRomSub(obs) {
+        return obs.pipe(
             concatMap((buffer) => {
                 let data = new DataView(buffer);
                 for(let i = 0; i < 65536; i++) {
@@ -83,6 +96,22 @@ export class Loader {
                     this.atSysExec(),            /* exec Main  */
                     EMPTY ) })
         );
+    }
+    /** load a rom file
+     * @paran {File} file
+     * @return {Observable}
+     */
+    loadRom(file) {
+        return this.loadRomSub(this.readFile(file));
+    }
+    /** load a rom url
+     * @paran {String} url
+     * @return {Observable}
+     */
+    loadRomUrl(url) {
+        return this.loadRomSub(fromFetch(url, {
+            selector: response => response.arrayBuffer()
+        }));
     }
 
     

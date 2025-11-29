@@ -21,8 +21,6 @@ export class Gigatron {
         for (let i = 0; i < this.ram.length; i++) {
             this.ram[i] = randomUint8();
         }
-        console.log(this.ram.length, this.ramMask);
-
     }
 
     /** reset registers to power-on state */
@@ -49,18 +47,31 @@ export class Gigatron {
         this.prevctrl = -1;
 
         let ir = this.rom[pc];
-        let op = (ir >> 13) & 0x0007;
-        let mode = (ir >> 10) & 0x0007;
-        let bus = (ir >> 8) & 0x0003;
         let d = (ir >> 0) & 0x00ff;
+	switch ((ir >> 8) & 0x00ff) {
 
-        switch (op) {
-            case 0:
-            case 1:
-            case 2:
-            case 3:
-            case 4:
-            case 5:
+	case 0x5d: { // ora([Y,Xpp],OUT)
+	    let addr = (this.y << 8) | this.x;
+            this.x = (this.x + 1) & 0xff;
+            this.writeOut(this.ac | this.readMem(addr))
+	    break; }
+	case 0x00: { // ld(d)
+	    this.ac = d;
+	    break; }
+	case 0x01: { // ld([d])
+	    this.ac = (this.ctrl & 1) ? this.miso : this.ram[d];
+	    break; }
+	case 0xc2: { // st([d])
+	    this.ram[d] = this.ac;
+	    break; }
+
+	default: { // everything else
+            let op = (ir >> 13) & 0x0007;
+	    let mode = (ir >> 10) & 0x0007;
+            let bus = (ir >> 8) & 0x0003;
+            switch (op) {
+            case 0: case 1: case 2:
+            case 3: case 4: case 5:
                 this.aluOp(op, mode, bus, d);
                 break;
             case 6:
@@ -69,7 +80,9 @@ export class Gigatron {
             case 7:
                 this.branchOp(mode, bus, d);
                 break;
-        }
+            }
+	    break; }
+	}
     }
 
     /** perform an alu op
@@ -86,13 +99,7 @@ export class Gigatron {
                 b = d;
                 break;
             case 1:
-                let addr = this.addr(mode, d);
-                if (this.ctrl & 1) {
-                    b = this.miso;
-                } else {
-                    if (addr & 0x8000) { addr = addr ^ this.bank; }
-                    b = this.ram[addr & this.ramMask];
-                }
+                b = this.readMem(this.addr(mode, d));
                 break;
             case 2:
                 b = this.ac;
@@ -121,10 +128,7 @@ export class Gigatron {
         }
 
         switch (mode) {
-            case 0:
-            case 1:
-            case 2:
-            case 3:
+            case 0: case 1: case 2: case 3:
                 this.ac = b;
                 break;
             case 4:
@@ -133,15 +137,8 @@ export class Gigatron {
             case 5:
                 this.y = b;
                 break;
-            case 6:
-            case 7:
-                let rising = ~this.out & b;
-                this.out = b;
-                // rising edge of out[6] registers outx from ac
-                if (rising & 0x40) {
-                    this.outx = this.ac;
-                }
-
+            case 6: case 7:
+                this.writeOut(b);
                 break;
         }
     }
@@ -261,6 +258,29 @@ export class Gigatron {
         }
     }
 
+    /** read from memory with banking and spi
+     * @param (number) addr
+     */
+    readMem(addr) {
+	if (this.ctrl & 1) {
+	    return this.miso;
+	} else {
+	    if (addr & 0x8000) { addr = addr ^ this.bank; }
+	    return this.ram[addr & this.ramMask];
+	}
+    }
+
+    /** write out register
+     * @param (number) b
+     */
+    writeOut(b) {
+        let rising = ~this.out & b;
+        this.out = b;
+        if (rising & 0x40) {
+            // rising edge of out[6] registers outx from ac
+            this.outx = this.ac;
+        }
+    }
     
     /** calculate a branch page offset
      * @param {number} bus
@@ -272,8 +292,7 @@ export class Gigatron {
             case 0:
                 return d;
             case 1:
-                // RAM always has at least 1 page, so no need to mask address
-                return this.ram[d];
+                return this.readMem(d);
             case 2:
                 return this.ac;
             case 3:
