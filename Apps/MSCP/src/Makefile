@@ -2,15 +2,17 @@ ROM=dev7
 MAP=128k
 GLCC=glcc
 PYTHON=python3
-PGMS=../mscp_128K.gt1
+PGMS=../mscp_128k.gt1
 OBJS=mscp.o core.o
-ASMS=onload.s
 
 all: ${PGMS}
 
-../mscp_128K.gt1: ${OBJS} ${ASMS} mscp.ovl book.bin
-	${GLCC} -rom=${ROM} -map=${MAP},./mscp.ovl ${OBJS} ${ASMS} -o $@
-	${PYTHON} addbook.py $@ book.bin
+../mscp_128k.gt1: mscp1.gt1 book.bin
+	booklen=`ls -ln book.bin | awk '{ print($$5); }'` ;\
+	${PYTHON} gt1merge.py $< --raw=book.bin@0x4000 --doke=$$booklen@0x42 -o $@
+
+mscp1.gt1: ${OBJS} ${ASMS}
+	${GLCC} -rom=${ROM} -map=${MAP} ${OBJS} ${ASMS} -o $@
 
 mscp.o: mscp.c core.h
 	${GLCC} -rom=${ROM} -c $<
@@ -18,15 +20,12 @@ mscp.o: mscp.c core.h
 core.o: core.c core.h
 	${GLCC} -rom=${ROM} -c $<
 
-dumpbook: mscp.c
-
 book.bin: book.txt mscp.c Makefile
 	${CC} -DSAVE_BOOK_BIN=1 -DSUBTRACTIVE_RND=1 mscp.c -o dumpbook
 	./dumpbook
 
 clean:
 	-rm ${OBJS} *.gt1 *.prf *.frg prof.txt dumpbook mscp
-
 
 # Profiling support
 
@@ -44,5 +43,11 @@ mscp-sim.gt1: ${CFILES} ${ASMS} mscp.ovl
 
 mscp-sim.prf: mscp-sim.gt1 prof.in
 	${GTSIM} -prof $@ mscp-sim.gt1 < prof.in
+
+
+# Old version
+
+mscp0.gt1: mscp0.c
+	${GLCC} -rom=${ROM} -map=sim,allout -DAVOID_SCANF $< -o $@
 
 
