@@ -7,6 +7,10 @@
 
 #include "core.h"
 
+#if _GLCC_VER >= 206046
+# error "This code is not compatible with glcc>=2.6.46"
+#endif
+
 int prebooksize = 0;
 near int booksize = 0;         /* Number of opening book entries */
 near int bkindex = -1;         /* Current book table index */
