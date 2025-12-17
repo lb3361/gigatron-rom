@@ -26,28 +26,3 @@ book.bin: book.txt mscp.c Makefile
 
 clean:
 	-rm ${OBJS} *.gt1 *.prf *.frg prof.txt dumpbook mscp
-
-# Profiling support
-
-GTSIM=gtsim -rom ../../../gigatron-rom/dev128k7.rom -vmode 1975
-GTPROF=gtprof
-CFILES=${OBJS:.o=.c}
-
-prof.txt: mscp-sim.prf
-	${GTPROF} mscp-sim.prf mscp-sim.frg | sort -nr > $@
-
-mscp-sim.gt1: ${CFILES} ${ASMS} mscp.ovl
-	${GLCC} -rom=${ROM} -map=sim,allout,./mscp.ovl \
-	    -DREPEATABLE_RND=1 ${CFILES} ${ASMS} -o $@ --frags > mscp-sim.frg
-	${PYTHON} addbook.py $@ book.bin
-
-mscp-sim.prf: mscp-sim.gt1 prof.in
-	${GTSIM} -prof $@ mscp-sim.gt1 < prof.in
-
-
-# Old version
-
-mscp0.gt1: mscp0.c
-	${GLCC} -rom=${ROM} -map=sim,allout -DAVOID_SCANF $< -o $@
-
-
