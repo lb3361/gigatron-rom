@@ -33,7 +33,6 @@
 
 import argparse, json, string, functools, fnmatch
 import os, sys, traceback, copy, builtins
-import builtins
 import glccver
 
 args = None
@@ -204,9 +203,10 @@ def resolve(s, ignore=None):
 
 class Fragment:
     "Class for representing the code/data fragments in a module"
-    __slots__ = ('segment', 'name','func', 'size', 'align', 'nohop', 'amin', 'amax', 'aoff')
-    def __init__(self, segment, name, func, size = None, align = None):
-        self.segment = segment     # CODE, DATA, BSS, COMMON
+    __slots__ = ('cseg', 'name','func', 'size', 'align',
+                 'nohop', 'amin', 'amax', 'aoff', 'passed')
+    def __init__(self, cseg, name, func, size = None, align = None):
+        self.cseg = cseg           # CODE, DATA, BSS, COMMON
         self.name = name           # fragment name
         self.func = func           # fragment code
         self.size = size           # fragment size (data)
@@ -215,8 +215,9 @@ class Fragment:
         self.aoff = None           # required page offset
         self.amin = None           # min address range
         self.amax = None           # max address range
+        self.passed = -1           # successfully assembled in that pass
     def __repr__(self):
-        return f"Fragment({self.segment},'{self.name}',...)"
+        return f"Fragment({self.cseg},'{self.name}',...)"
 
 class Module:
     '''Class for assembly modules read from .s/.o/.a files.'''
@@ -242,19 +243,27 @@ class Module:
                 if tp[0] == 'NOHOP' and len(tp) == 2:
                     match.nohop = True        #('NOHOP', "pattern")
                 elif tp[0] == 'OFFSET' and len(tp) == 3 and isinstance(tp[2], int):
-                    conflict = not match.aoff is None
+                    conflict = match.aoff != None
                     if not conflict:          #('OFFSET', "pattern", addr)
                         match.aoff = tp[2]
                 elif tp[0] == 'ORG' and len(tp) == 3 and isinstance(tp[2],int):
-                    conflict = not match.amin is None
+                    if match.amin != None and match.amax == None:
+                        conflict = match.amin != tp[2]
                     if not conflict:          #('ORG', "pattern", addr)
                         match.amin = tp[2]
                         match.amax = None
                 elif tp[0] == 'PLACE' and len(tp) == 4 and isinstance(tp[2],int) and isinstance(tp[3],int):
-                    conflict = not match.amin is None
-                    if not conflict:          #('PLACE', "pattern", minaddr, maxaddr)
-                        match.amin = tp[2]
-                        match.amax = tp[3]
+                    if match.amin != None and match.amax == None:
+                        pass # org takes precedence
+                    else:
+                        (amin,amax) = tp[2:4]
+                        if match.amin != None and match.amax != None:
+                            amin = max(amin, match.amin)
+                            amax = min(amax, match.amax)
+                            conflict = amax < amin
+                        if not conflict:       #('PLACE', "pattern", minaddr, maxaddr)
+                            match.amin = amin
+                            match.amax = amax
                 else:
                     error(f"Invalid placement constraints {tp}")
                 if conflict and len(matches) <= 1:
@@ -291,12 +300,17 @@ class Module:
                         debug(f"map_place directive {tp} matches {n} fragment(s)")
                 elif tp[0] != 'NOP':
                     error(f"Unrecognized map_place() specification {tp}")
+        # placement pragmas
+        for tp in args.place:
+            if fnmatch.fnmatch(self.name, tp[0]):
+                placement(tp[1:])
+
     def __repr__(self):
         return f"Module('{self.fname or self.name}',...)"
     def label(self, sym, val):
         '''Define a label within a module.
            Increment counter when label value has changed relative to the previous pass.'''
-        if the_pass > 0:
+        if the_pass > 0 and not isinstance(val,Unk):
             if sym in self.symdefs and val == self.symdefs[sym]:
                 self.sympass[sym] = the_pass
             elif sym in self.symdefs and self.sympass[sym] == the_pass:
@@ -312,16 +326,30 @@ class Module:
 class Segment:
     '''Represent memory segments to be populated with code/data'''
     __slots__ = ('saddr', 'eaddr', 'pc', 'flags', 'buffer', 'nbss')
-    def __init__(self, saddr, eaddr, flags=False):
+    def __init__(self, saddr, eaddr, flags=0):
         self.saddr = saddr
         self.eaddr = eaddr
         self.pc = saddr
-        self.flags = flags or False # 0x1: no code, 0x2 : no data, 0x4 : no heap
         self.buffer = None
-        self.nbss = None
+        self.nbss = 0
+        if type(flags) == str:
+            # Flags is now a string with letters:
+            # - 'C' if the segment can contain code
+            # - 'D' if it can contain data
+            # - 'H' if it can be used for the malloc heap.
+            # Using lowercase letters instead mean that use is permitted
+            # when an explicit placement constraint is provided.
+            if not set(flags) <= set("CDHcd"):
+                error(f'invalid character in segment flags \"{flags}\"')
+            self.flags = flags
+        else:
+            # Compatibility
+            self.flags =  'c' if flags & 1 else 'C';
+            self.flags += 'd' if flags & 2 else 'D';
+            self.flags += ''  if flags & 8 else 'H';
+
     def __repr__(self):
-        d = f",flags={hex(self.flags)}" if self.flags else ''
-        return f"Segment({hex(self.saddr)},{hex(self.eaddr)}{d})"
+        return f"Segment({hex(self.saddr)},{hex(self.eaddr)},\'{self.flags}\')"
 
 def emit(*args):
     global final_pass, the_pc, the_segment
@@ -377,8 +405,8 @@ def emit_long_jump(d):
 def hop(sz, jump):
     '''Ensure, possibly with a hop, that there are at
        least sz bytes left in the segment. '''
+    global hops_enabled
     if bytes_left() < sz:
-        global hops_enabled
         if not hops_enabled:
             error(f"internal error: cannot honor hop({sz}) because hops are disabled")
         elif jump and bytes_left() < size_long_jump():
@@ -387,8 +415,9 @@ def hop(sz, jump):
             global the_segment, the_pc
             hops_enabled = False
             the_segment.pc = the_pc
-            lfss = args.lfss or 64
-            ns = find_code_segment(max(lfss, sz))
+            ns = find_continuation_code_segment(min(256, max(sz, args.lfss or 48)))
+            if not ns:
+                ns = find_continuation_code_segment(min(256, sz))
             if not ns:
                 fatal(f"map memory exhausted while fitting function `{the_fragment.name}'")
             if jump:
@@ -509,7 +538,7 @@ def zpage_reserve(rng, lbl, error_on_conflict=True):
     for i in rng:
         if i < 0 or i >= 256:
             fatal(f"Cannot reserve address {hex(i)} in page zero")
-        elif zpage_map[i] and zpage_map[i] != lbl:
+        elif zpage_map[i] != None and zpage_map[i] != lbl:
             if error_on_conflict:
                 fatal(f"Zero page address {hex(i)} is both {zpage_map[i]} and {lbl}")
         else:
@@ -526,26 +555,24 @@ def create_zpage_map():
         zpage_reserve(range(0xd0,0x100), "STACK")
     else:
         zpage_reserve(range(0xf0,0x100), "STACK")
-    zpage_reserve(range(0,0x30), "V4")
+    zpage_reserve(range(0x00,0x30), "V4")
     zpage_reserve(range(0x80,0x81), "V4")
-    if args.cpu < 7:
-        zpage_reserve(range(0x30,0x42), "LOADER")
-    elif args.cpu >= 5:
-        zpage_reserve(range(0x30,0x36), "VIRQ")
-    if args.cpu == 6:
-        zpage_reserve(range(0xc0,0xd0), "VX0")
+    zpage_reserve(range(0x30,0x36), "LOADER" if args.cpu < 5 else "VIRQ")
+    zpage_reserve(range(0x36,0x42), "LOADER" if args.cpu < 7 else None)
     if args.cpu >= 7:
         zpage_reserve(range(0x81,0x8c), "V7")
+    elif args.cpu == 6:
+        zpage_reserve(range(0xc0,0xd0), "VX0")
 
 def create_zpage_segments():
     segs = []
-    last = None
+    lasti = None
     for i in range(256):
-        if last and zpage_map[i]:
-            segs.append(Segment(last, i, 7))
-            last = None
-        elif not last and not zpage_map[i]:
-            last = i
+        if lasti and zpage_map[i]:
+            segs.append(Segment(lasti, i, 'd'))
+            lasti = None
+        if not lasti and not zpage_map[i]:
+            lasti = i
     return segs
 
 # ------------- usable vocabulary for .s/.o/.a files
@@ -726,25 +753,28 @@ def hi(x):
     return (v(x) >> 8) & 0xff
 
 @vasm
-def org(addr1, addr2=None):
+def org(addr):
     '''Force a code fragment to be placed at a specific location.
        The fragment must fit in the page and the required space
        must be available. This currently piggybacks on nohop()
        and does not work for code fragments. I have to find
        a better way of doing this.'''
-    global short_function
-    # this information is collected in measure_code_fragment()
     if the_pass == 0:
+        # this information is collected in measure_code_fragment()
+        addr = int(addr)
         the_fragment.nohop = True
-        the_fragment.amin = int(addr1)
-        the_fragment.amax = int(addr2) if addr2 else None
+        if the_fragment.amin != None and the_fragment.amax == None:
+            if addr != the_fragment.amin:
+                error(f"Conflicting org constraints")
+        else:
+            the_fragment.amin = int(addr)
+            the_fragment.amax = None
 @vasm
 def nohop():
     '''Force a code fragment to be fit in a single page.
        An error will be signaled if no page can fit it.'''
-    global short_function
-    # this information is collected in measure_code_fragment()
     if the_pass == 0:
+        # this information is collected in measure_code_fragment()
         the_fragment.nohop = True
 @vasm
 def tryhop(sz=None, jump=True):
@@ -795,7 +825,7 @@ def label(sym, val=None, hop=None):
         referenced = False
         if sym in the_module.symrefs:
             referenced = (the_module.symrefs[sym] == the_pass)
-        if hop != 0 and not referenced:
+        if the_fragment.cseg == 'CODE' and hop != 0 and not referenced:
             tryhop(hop or 12)
         the_module.label(sym, v(val) if val != None else the_pc)
 
@@ -805,10 +835,31 @@ def pragma_option(opt):
     if not opt in args.opts:
         args.opts.append(opt)
 @vasm
+def pragma_lomem(modname,fragname):
+    assert type(modname) == str
+    assert type(fragname) == str
+    args.place.append((modname,'PLACE',fragname,0x200,0x7fff))
+@vasm
 def pragma_lib(fn):
     assert type(fn) == str
     if not fn in args.l:
         args.l.append(fn)
+@vasm
+def pragma_initsp(addr):
+    if args.initspsrc == 'p' and args.initsp != addr:
+        error(f"conflicting initsp pragmas")
+    args.initspsrc = 'p'
+    args.initsp = addr
+@vasm
+def pragma_onload(fn):
+    assert type(fn) == str
+    if not fn in args.onload:
+        args.onload.append(fn)
+@vasm
+def pragma_segment(saddr,eaddr,flags):
+    assert 0 <= saddr < eaddr <= 0x10000
+    assert type(flags) == str
+    args.pragsegs.append(Segment(saddr, eaddr, flags))
 
 @vasm
 def ST(d):
@@ -2040,6 +2091,10 @@ def _FSUB():
     extern('_@_fsub')
     _CALLI('_@_fsub')               # FAC-[vAC] --> FAC
 @vasm
+def _FSUBR():
+    extern('_@_fsubr')
+    _CALLI('_@_fsubr')              # [vAC]-FAC --> FAC
+@vasm
 def _FMUL():
     extern('_@_fmul')
     _CALLI('_@_fmul')               # FAC*[vAC] --> FAC
@@ -2297,7 +2352,7 @@ def find_exporters(sym):
         for m in module_list:
             if not m.library:
                 for f in m.code:
-                    if f.segment == 'COMMON' and f.name == sym:
+                    if f.cseg == 'COMMON' and f.name == sym:
                         return [ m ]
     return elist
 
@@ -2335,9 +2390,9 @@ def measure_code_fragment(m, frag):
 
 def measure_fragments(m):
     for frag in m.code:
-        if frag.segment in ('DATA', 'BSS') and not frag.size:
+        if frag.cseg in ('DATA', 'BSS') and not frag.size:
             measure_data_fragment(m, frag)
-        elif frag.segment in ('CODE'):
+        elif frag.cseg in ('CODE'):
             measure_code_fragment(m, frag)
     the_module = None
     the_fragment = None
@@ -2409,13 +2464,13 @@ def convert_common_symbols():
        and referenced by the other modules.'''
     for m in module_list:
         for decl in m.code:
-            if decl.segment == 'COMMON':
+            if decl.cseg == 'COMMON':
                 sym = decl.name
                 if sym in exporters:
                     pass
                 else:
                     debug(f"instantiating common '{sym}' in '{m.fname}'")
-                    decl.segment = 'BSS'
+                    decl.cseg = 'BSS'
                     exporters[sym] = m
 
 def check_undefined_symbols():
@@ -2444,175 +2499,138 @@ class Stop(Exception):
     def __init__(self, msg):
         self.msg = msg
 
-def round_used_segments():
-    '''Split all segments containing code or data into
-       a used segment and a free segment starting on
-       a page boundary. Marks used segment as non-BSS.'''
-    for (i,s) in enumerate(segment_list):
-        epage = (s.pc + 0xff) & ~0xff
-        if s.pc > s.saddr and s.eaddr > epage:
-            segment_list.insert(i+1, Segment(epage, s.eaddr, s.flags))
-            s.eaddr = epage
-            if args.d >= 2:
-                debug(f"rounding {segment_list[i:i+2]}")
-        if s.pc > s.saddr:
-            s.nbss = True
-
 def aligned(addr, align):
     if align and align > 1:
         addr = align * ((addr + align - 1) // align)
     return addr
 
-def find_data_segment(size, align=None):
+def find_segment(size, cseg, align=1, firstgo=True):
+    # This is surprisingly complex already
+    iscode = (cseg == 'CODE')
+    isbss =  (cseg == 'BSS')
+    tflag = "Cc" if iscode else "Dd"
+    tnbss = -1 if isbss else +1
     amin = the_fragment.amin
     amax = the_fragment.amax
     aoff = the_fragment.aoff
+    nohop = the_fragment.nohop or iscode
     for (i,s) in enumerate(segment_list):
-        if amin == None and (s.flags & 0x2):  # not a data segment
-            continue
+        # check flags
+        if not tflag[0] in s.flags:
+            if amin == None or not tflag[1] in s.flags:
+                continue
+        # try constructing an address which may or may not fit
         addr = aligned(s.pc, align)
-        if aoff != None and aoff & 0xff >= addr & 0xff:
-            addr = aligned((addr & 0xff00)|(aoff & 0xff), align)
+        epage = (addr | 0xff) + 1
+        if aoff != None and aoff >= addr & 0xff:
+            addr = (addr & 0xff00) | (aoff & 0xff)
         if amin != None and amin > addr:
-            addr = aligned(amin, align)
-        if the_fragment.nohop and (addr ^ (addr + size - 1)) & 0xff00 != 0:
-            addr = aligned(addr, 256)
+            addr = amin
+        if nohop and addr + size > epage:
+            addr = epage
+        # handle hard placement
         if amin != None and amax == None:
             if not (amin >= s.saddr and amin < s.eaddr):
                 continue
             if amin < s.pc:
-                raise Stop(f"Requested address for fragment {the_fragment.name}@{hex(amin)} is busy")
-            if addr > amin:
-                raise Stop(f"Requested address for fragment {the_fragment.name}@{hex(amin)} is misaligned")
-            if addr + size > s.eaddr:
+                raise Stop(f"Requested address {the_fragment.name}@{hex(amin)} is busy")
+            if addr > amin and align > 1:
+                raise Stop(f"Requested address {the_fragment.name}@{hex(amin)} is misaligned")
+            if addr > amin or addr + size > s.eaddr:
                 raise Stop(f"Fragment {the_fragment.name}@{hex(amin)} does not fit at the requested address")
+        # avoid mixing bss and not bss in the same page
+        if firstgo and tnbss * s.nbss < 0:
+            addr = epage
+        # final validation.
         if addr + size > s.eaddr:
             continue
         if amax != None and addr + size > amax + 1:
             continue
         if aoff != None and addr & 0xff != aoff:
             continue
-        while addr > s.pc and s.pc > s.saddr and addr < s.pc + 4:
-            while s.pc < addr:                  # not worth splitting
-                s.buffer.append(0) if s.buffer else None
-                s.pc += 1
+        # pad segment if s.pc < addr < s.pc + 4 and no nbss change
+        if s.pc < addr < s.pc + 4 and s.nbss * tnbss >= 0:
+            s.buffer = s.buffer + builtins.bytes(addr - s.pc) if s.buffer != None else None
             s.pc = addr
-        if addr > s.pc:                         # split the segment
+        # carve a new segment when there is an unused part or when nbss conflicts
+        if addr > s.pc or s.nbss * tnbss < 0:
             ns = Segment(addr, s.eaddr, s.flags)
             s.eaddr = addr
             segment_list.insert(i+1, ns)
             s = ns
             i = i+1
-        return s
-
-def find_code_segment(size):
-    size = min(256, size)
-    amin = the_fragment.amin
-    amax = the_fragment.amax
-    aoff = the_fragment.aoff
-    for (i,s) in enumerate(segment_list):
-        if amin == None and s.flags & 0x1:  # not a code segment
-            continue
-        if amin and amax and amin < 0x100 and amax >= 0x100:
-            amin = 0x100                    # do not place code in page zero
-        addr = s.pc
-        if aoff != None and aoff >= addr & 0xff:
-            addr = (addr & 0xff00) | (aoff & 0xff)
-        if amin != None and amin > addr:
-            addr = amin
+        # make sure code segment does not extend beyond page boundary
         epage = (addr | 0xff) + 1
-        if amin != None and amax == None:
-            if not (amin >= s.saddr and amin < s.eaddr):
-                continue
-            if amin >= s.saddr and amin < s.pc:
-                raise Stop(f"Requested address for fragment {the_fragment.name}@{hex(amin)} is busy")
-            if amin < s.eaddr and amin + size > min(epage, s.eaddr):
-                raise Stop(f"Fragment {the_fragment.name}@{hex(amin)} does not fit at the requested address")
-        if addr + size > epage:
-            addr = epage
-            epage = (addr | 0xff) + 1
-        if addr + size > min(epage, s.eaddr):
-            continue
-        if amax != None and addr + size > amax + 1:
-            continue
-        if aoff != None and addr & 0xff != aoff:
-            continue
-        # possibly carve segment before address addr
-        if addr > s.pc:
-            ns = Segment(addr, s.eaddr, s.flags)
-            s.eaddr = addr
-            segment_list.insert(i+1, ns)
-            s = ns
-            i = i+1
-        # since code segments cannot cross page boundaries
-        # it is sometimes necessary to carve a code segment from a larger one
-        if s.eaddr > epage:
+        if iscode and s.eaddr > epage:
             ns = Segment(epage, s.eaddr, s.flags)
             s.eaddr = epage
             segment_list.insert(i+1, ns)
+        # mark nbss
+        s.nbss = s.nbss or tnbss
+        # validate and return
+        assert s.pc == addr
+        assert tnbss == s.nbss
+        assert amin == None or amin <= addr
+        assert amax == None or amax >= addr
+        assert amin == None or amax != None or amin == addr
+        assert aoff == None or addr & 0xff == aoff
+        assert s.eaddr <= epage or not iscode
+        assert addr + size <= epage or not nohop
         return s
-    # not found
     return None
 
-def assemble_code_fragments(m, placed=False, absolute=False):
-    global the_module, the_fragment, the_segment, the_pc
-    global hops_enabled, short_function
-    the_module = m
-    for frag in m.code:
-        the_fragment = frag
-        if frag.segment == 'CODE':
-            if bool(frag.amin) != bool(placed):
-                continue
-            if placed and bool(frag.amax) == absolute:
-                continue
-            funcsize = frag.size
-            the_segment = None
-            sfst = min(256, args.sfst or 96)
-            if frag.nohop or funcsize <= sfst:
-                short_function = True
-                hops_enabled = False
-                the_segment = find_code_segment(funcsize)
-                if frag.nohop and not the_segment:
-                    error(f"cannot find a segment for short code fragment '{frag.name}' of length {funcsize}")
-                if the_segment and (args.d >= 2 or final_pass):
-                    debug(f"assembling code fragment '{frag.name}' at {hex(the_segment.pc)} in {the_segment}")
-            if not the_segment:
-                short_function = False
-                hops_enabled = True
-                lfss = args.lfss or 64
-                the_segment = find_code_segment(min(lfss, 256))
-                if not the_segment:
-                    raise Stop(f"cannot fit code fragment '{frag.name}'")
-                if the_segment and (args.d >= 2 or final_pass):
-                    debug(f"assembling code fragment '{frag.name}' at {hex(the_segment.pc)} in {the_segment}")
-            the_pc = the_segment.pc
-            if args.fragments and final_pass:
-                record_fragment_address(the_pc)
-            try:
-                frag.func()
-            except Exception as err:
-                fatal(str(err), exc=True)
-            the_segment.pc = the_pc
-            if args.fragments and final_pass:
-                record_fragment_address(the_pc)
-            if args.rpth and labelchange_counter > args.rpth and not final_pass:
-                raise Stop(f"{labelchange_counter} changed labels already: restarting a new pass.")
+def find_continuation_code_segment(size):
+    # this is called to find a continuation segment
+    return find_segment(size, cseg='CODE', firstgo=True) \
+        or find_segment(size, cseg='CODE', firstgo=False)
 
-def assemble_data_fragments(m, cseg, placed=False):
-    global the_module, the_fragment, the_segment, hops_enabled, the_pc
-    global labelchange_counter
-    the_module = m
-    for frag in m.code:
-        the_fragment = frag
-        if bool(frag.amin) != bool(placed):
-            continue
-        if frag.segment == cseg:
+def find_first_code_segment(frag, firstgo=True):
+    global the_segment, hops_enabled, short_function
+    funcsize = frag.size
+    sfst = min(256, args.sfst or 256)
+    lfss = min(256, funcsize, args.lfss or 96)
+    the_segment = None
+    if frag.nohop or funcsize <= sfst:
+        the_segment = find_segment(funcsize, cseg='CODE', firstgo=firstgo)
+        if frag.nohop and not the_segment and not firstgo:
+            raise Stop(f"cannot fit short code fragment '{frag.name}' of length {funcsize}")
+        if the_segment:
+            short_function = True
             hops_enabled = False
-            the_segment = find_data_segment(frag.size, align=frag.align)
+            if args.d >= 2 or final_pass:
+                debug(f"assembling code fragment '{frag.name}' at {hex(the_segment.pc)} in {the_segment}")
+    if not the_segment:
+        the_segment = find_segment(lfss, cseg='CODE', firstgo=firstgo)
+        if not the_segment and not firstgo:
+            raise Stop(f"cannot fit code fragment '{frag.name}'")
+        if the_segment:
+            short_function = False
+            hops_enabled = True
+            if args.d >= 2 or final_pass:
+                debug(f"assembling code fragment '{frag.name}' at {hex(the_segment.pc)} in {the_segment}")
+    return the_segment
+    
+def assemble_fragments(firstgo, predicate=None):
+    global the_module, the_fragment, the_segment, the_pc, hops_enabled
+    for m in module_list:
+        the_module = m
+        for frag in m.code:
+            the_fragment = frag
+            if frag.passed >= the_pass:
+                continue
+            if predicate and not predicate(frag):
+                continue
+            if frag.cseg == 'CODE':
+                the_segment = find_first_code_segment(frag, firstgo)
+            else:
+                the_segment = find_segment(frag.size, frag.cseg, align=frag.align, firstgo=firstgo)
+                if the_segment and (args.d >= 2 or final_pass):
+                    debug(f"assembling {frag.cseg} fragment '{frag.name}' at {hex(the_segment.pc)} in {the_segment}")
+                hops_enabled = False
+            if firstgo and not the_segment:
+                continue
             if not the_segment:
-                raise Stop(f"cannot fit {cseg} fragment '{frag.name}'")
-            elif args.d >= 2 or final_pass:
-                debug(f"assembling {cseg} fragment '{frag.name}' at {hex(the_segment.pc)} in {the_segment}")
+                raise Stop(f"cannot fit {frag.cseg} fragment '{frag.name}'")
             the_pc = the_segment.pc
             if args.fragments and final_pass:
                 record_fragment_address(the_pc)
@@ -2624,41 +2642,78 @@ def assemble_data_fragments(m, cseg, placed=False):
             except Exception as err:
                 fatal(str(err), exc=True)
             the_segment.pc = the_pc
+            frag.passed = the_pass
             if args.fragments and final_pass:
                 record_fragment_address(the_pc)
+            if args.rpth and labelchange_counter > args.rpth and not final_pass:
+                raise Stop(f"{labelchange_counter} changed labels already: restarting a new pass.")
+
+def check_segment_overlaps(segments, message):
+    sl = sorted(segments, key=lambda s: s.saddr)
+    for i in range(len(sl)-1):
+        if sl[i].eaddr > sl[i+1].saddr:
+            error(f"{message} overlap near address {hex(sl[i+1].saddr)}")
+
+def make_segments():
+    # zp and map segments
+    segments = create_zpage_segments()
+    for (s,e,d) in map_segments():
+        segments.append(Segment(s,e,d))
+    if the_pass == 0:
+        check_segment_overlaps(segments, "map-defined segments")
+        check_segment_overlaps(args.pragsegs, "pragma-defined segments")
+    # subtract pragma-defined segments from map-defined segments
+    for ps in args.pragsegs:
+        nsegments = []
+        for s in segments:
+            if s.eaddr <= ps.saddr or s.saddr >= ps.eaddr:
+                nsegments.append(s)
+            else:
+                if s.saddr < ps.saddr and s.eaddr > ps.saddr:
+                    nsegments.append(Segment(s.saddr,ps.saddr,s.flags))
+                if s.eaddr > ps.eaddr and s.saddr < ps.eaddr:
+                    nsegments.append(Segment(ps.eaddr,s.eaddr,s.flags))
+        segments = nsegments
+    # plus pragma defined segments
+    for s in args.pragsegs:
+        segments.append(Segment(s.saddr,s.eaddr,s.flags))
+    return segments
 
 def run_pass():
     global the_pass, the_module, the_fragment
     global labelchange_counter, genlabel_counter
     global segment_list, symdefs
     # initialize
+    segment_list = make_segments()
     the_pass += 1
     labelchange_counter = 0
     genlabel_counter = 0
-    segment_list = create_zpage_segments()
-    for (s,e,d) in map_segments():
-        segment_list.append(Segment(s,e,d))
     debug(f"pass {the_pass}")
     try:
-        # code segments with explicit address or placement constraints
-        for m in module_list:
-            assemble_code_fragments(m, placed=True, absolute=True)
-        for m in module_list:
-            assemble_code_fragments(m, placed=True, absolute=False)
-        for m in module_list:
-            assemble_data_fragments(m, 'DATA', placed=True)
-        for m in module_list:
-            assemble_data_fragments(m, 'BSS', placed=True)
-        # remaining code segments
-        for m in module_list:
-            assemble_code_fragments(m, placed=False)
-        # data segments
-        for m in module_list:
-            assemble_data_fragments(m, 'DATA')
-        round_used_segments()
-        # bss segments
-        for m in module_list:
-            assemble_data_fragments(m, 'BSS')
+        # Heuristic ordering of the fragment placement
+        # -- fragments with explicit addresses
+        assemble_fragments(False, lambda f: f.amin and not f.amax)
+        # -- large data fragments (placing BSS here makes the engine hard to predict)
+        if args.ldff != None:
+            assemble_fragments(False, lambda f: f.cseg!='CODE' and f.size>=args.ldff and f.amin)
+            assemble_fragments(False, lambda f: f.cseg!='CODE' and f.size>=args.ldff)
+        # -- placed code and data
+        assemble_fragments(True, lambda f: f.cseg=='CODE' and f.aoff)
+        assemble_fragments(True, lambda f: f.cseg!='CODE' and f.aoff)
+        assemble_fragments(True, lambda f: f.cseg=='CODE' and f.amin)
+        assemble_fragments(True, lambda f: f.cseg!='CODE' and f.amin)
+        assemble_fragments(False, lambda f: f.cseg=='CODE' and f.amin)
+        assemble_fragments(False, lambda f: f.cseg!='CODE' and f.amin)
+        # -- all code and data
+        assemble_fragments(True, lambda f: f.cseg=='CODE' )
+        assemble_fragments(True, lambda f: f.cseg=='DATA')
+        assemble_fragments(True, lambda f: f.cseg=='BSS')
+        # -- last call
+        assemble_fragments(False, lambda f: f.cseg=='CODE' )
+        assemble_fragments(False, lambda f: f.cseg=='DATA')
+        assemble_fragments(False, lambda f: f.cseg=='BSS')
+        # -- just to be sure
+        assemble_fragments(False)
     except Stop as stop:
         if final_pass or not labelchange_counter:
             fatal(stop.msg)
@@ -2704,7 +2759,7 @@ def doke_gt1(addr, val):
 def process_magic_bss(s, head_module, head_addr):
     '''Construct a linked list of sizeable bss segments to be cleared at runtime.'''
     for s in segment_list:
-        if s.pc > s.saddr + 4 and not s.nbss:
+        if s.pc > s.saddr + 4 and s.nbss < 0 and hi(s.saddr) != 0:
             debug(f"BSS segment {hex(s.saddr)}-{hex(s.pc)} will be cleared at runtime")
             size = s.pc - s.saddr
             s.buffer = bytearray(4)
@@ -2714,20 +2769,21 @@ def process_magic_bss(s, head_module, head_addr):
 
 def process_magic_heap(s, head_module, head_addr):
     '''Construct a linked list of heap segments.'''
-    for s in segment_list:
-        if s.flags & 0x4:
+    for (i,s) in enumerate(segment_list):
+        if not 'H' in s.flags:
             continue
         a0 = (s.pc + 3) & ~0x3
         a1 = s.eaddr &  ~0x3
         if a1 - a0 >= max(24, args.mhss or 24):
-            s.pc = a0 + 4
-            if not s.buffer:
-                s.buffer = bytearray(4)
+            if a0 > s.saddr:
+                segment_list.insert(i+1, Segment(a0, s.eaddr, s.flags))
+                s.eaddr = a0
             else:
-                s.buffer.extend(bytearray(s.pc - s.saddr - len(s.buffer)))
-            doke_gt1(a0, a1 - a0)
-            doke_gt1(a0 + 2, deek_gt1(head_addr))
-            doke_gt1(head_addr, a0)
+                s.buffer = bytearray(4)
+                s.pc += 4
+                doke_gt1(a0, a1 - a0)
+                doke_gt1(a0 + 2, deek_gt1(head_addr))
+                doke_gt1(head_addr, a0)
 
 def process_magic_list(s, head_module, head_addr):
     '''Constructs a linked list of structures defined in modules.'''
@@ -2736,7 +2792,7 @@ def process_magic_list(s, head_module, head_addr):
             if s in m.symdefs:
                 cons_addr = m.symdefs[s]
                 for frag in m.code:
-                    if frag.name == s and frag.segment == 'DATA':
+                    if frag.name == s and frag.cseg == 'DATA':
                         break
                 if not frag or frag.size < 4 or frag.align < 2:
                     return warning(f"ignoring magic symbol '{s}' in {m.fname} (wrong type)")
@@ -2771,16 +2827,13 @@ def process_magic_symbols():
        for the malloc() function. Each list record occupies
        the first 4 bytes of a segment. The first pointer contains
        the segment size.
-     * '__glink_magic_egt1' is not a list but merely a pointer
-       that marks the end of the highest gt1 segment.
     '''
-    egt1_addr = None
     for s in exporters:
         if s.startswith("__glink_magic_"):
             head_module = exporters[s]
             head_addr = head_module.symdefs[s]
             for frag in head_module.code:
-                if frag.name == s and frag.segment == 'DATA':
+                if frag.name == s and frag.cseg == 'DATA':
                     if frag.size != 2 or frag.align != 2:
                         return warning(f"ignoring magic symbol '{s}' (list head not a pointer)")
                 if deek_gt1(head_addr) != 0xBEEF:
@@ -2790,44 +2843,48 @@ def process_magic_symbols():
                 process_magic_bss(s, head_module, head_addr)
             elif s == '__glink_magic_heap':
                 process_magic_heap(s, head_module, head_addr)
-            elif s == '__glink_magic_egt1':
-                egt1_addr = head_addr
             else:
                 process_magic_list(s, head_module, head_addr)
-    if egt1_addr != None:
-        egt1 = 0
-        for s in segment_list:
-            if s.buffer and s.saddr + len(s.buffer) > egt1:
-                egt1 = s.saddr + len(s.buffer)
-        debug(f"Last GT1 segments ends at address {hex(egt1)}\n")
-        doke_gt1(egt1_addr, egt1)
+
+
+def collapse_segments(seglist):
+    seglist = sorted(segment_list, key = lambda x : x.saddr)
+    cseglist = []
+    nseglist = []
+    for s in seglist + [ None ]:
+        if s and s.buffer:
+            if len(cseglist) == 0 or \
+               hi(s.saddr) == 0 or \
+               s.saddr <= cseglist[-1].saddr + len(cseglist[-1].buffer) + 3:
+                cseglist.append(s)
+                continue
+        if s and hi(s.saddr) == 0:
+            continue
+        if len(cseglist) == 1:
+            nseglist.append(cseglist[0])
+        elif len(cseglist) > 1:
+            buffer = bytearray(0)
+            pc = cseglist[0].saddr
+            ns = Segment(pc, cseglist[-1].eaddr, '')
+            for cs in cseglist:
+                if pc < cs.saddr:
+                    buffer += builtins.bytes(cs.saddr - pc)
+                    if pc <= 0x80 and cs.saddr > 0x80:
+                        buffer[0x80 - cs.saddr] = 0x01
+                    pc = cs.saddr
+                buffer += cs.buffer
+                pc += len(cs.buffer)
+            ns.buffer = buffer
+            nseglist.append(ns)
+        cseglist = []
+        if s and s.buffer:
+            cseglist.append(s)
+    return nseglist
 
 def save_gt1(fname, start):
     with open(fname,"wb") as fd:
-        seglist = segment_list.copy()
-        seglist.sort(key = lambda x : x.saddr)
-        # collapse zeropage segments
-        zpseg = None
-        for s in seglist:
-            if not s.buffer:
-                continue
-            elif s.saddr & 0xff00:
-                break
-            elif not zpseg:
-                zpseg = s
-            else:
-                pc = zpseg.saddr + len(zpseg.buffer)
-                assert s.saddr >= pc
-                zpseg.buffer += builtins.bytes(s.saddr - pc)
-                if pc < 0x80 and s.saddr > 0x80:
-                    zpseg.buffer[0x80 - zpseg.saddr] = 1
-                zpseg.buffer += s.buffer
-                zpseg.eaddr = s.eaddr
-                s.buffer = None
-        # save segments
-        for s in seglist:
-            if not s.buffer:
-                continue
+        for s in collapse_segments(segment_list):
+            assert(s.buffer)
             a0 = s.saddr
             pc = s.saddr + len(s.buffer)
             while a0 < pc:
@@ -2847,10 +2904,11 @@ def print_symbols(allsymbols=False):
                 syms.append((m.symdefs[s], s, exported, m.fname))
     syms.sort(key = lambda x : x[0] )
     syms.sort(key = lambda x : x[1] )
-    print("\nSymbol table")
+    print("Symbol table")
     for s in syms:
         pp="public" if s[2] else "private"
-        print(f"\t{s[0]:04x} {pp:<8s}  {s[1]:<24s}  {s[3]:<24s}")
+        print(f"  {s[0]:04x} {pp:<8s}  {s[1]:<24s}  {s[3]:<24s}")
+    print()
 
 def print_fragments():
     addrs = list(addrinfo.keys())
@@ -2858,7 +2916,7 @@ def print_fragments():
     print("\nFragment map")
     for rng in addrs:
         (part, frag, m) = addrinfo[rng]
-        cseg = frag.segment
+        cseg = frag.cseg
         name = frag.name
         if cseg == 'CODE':
             nparts = fraginfo[id(frag)][0]
@@ -2867,7 +2925,30 @@ def print_fragments():
         plen = rng[1] - rng[0]
         if plen > 0:
             blen = f"({plen} byte{'s' if plen > 1 else ''})"
-            print(f"\t{rng[0]:04x}-{rng[1]-1:04x} {blen:<14s} {cseg:<5s} {name:<28s} {m.fname:<22s}")
+            print(f"  {rng[0]:04x}-{rng[1]-1:04x} {blen:<14s} {cseg:<5s} {name:<28s} {m.fname:<22s}")
+    print()
+
+def print_segments():
+    i = j = 0
+    segments = make_segments()
+    while i < len(segments):
+        s = segments[i]
+        a = s.saddr
+        l = s.eaddr - s.saddr
+        while True:
+            j = j+1
+            if j >= len(segments): break;
+            sj = segments[j]
+            if sj.saddr != a + 0x100: break
+            if sj.eaddr - sj.saddr != l: break
+            if (sj.flags != s.flags): break
+            a = sj.saddr
+        if j > i+1:
+            print(f"  {s} ... {segments[j-1]}")
+        else:
+            print(f"  {s}")
+        i = j
+    print(f"  InitSP({hex(args.initsp)})")
 
 
 # ------------- main function
@@ -2884,35 +2965,40 @@ def glink(argv):
         parser = argparse.ArgumentParser(
             conflict_handler='resolve',
             usage='glink [options] {<files.o>} -l<lib> -o <outfile.gt1>',
-            description='Collects gigatron .{s,o,a} files into a .gt1 file.',
-            epilog='''
-            	This program accepts the modules generated by
+            description='Collects glcc .{s,o,a} files into an output .gt1 file.',
+            epilog='''This program accepts the modules generated by
                 gigatron-lcc/rcc (suffix .s or .o). These files are
-                text files with a python syntax that construct functions
-                and data structures that defines all the VCPU instructions,
-                labels and data for this module.  Glink also accepts
-                concatenation of such files forming a library (suffix
-                .a).  The -cpu, -rom, and -map options provide values
+                text files with a python syntax that construct
+                functions and data structures that defines all the
+                VCPU instructions, labels and data for this module.
+                Glink also accepts concatenation of such files forming
+                a library (suffix .a).  The final output file includes
+                the module that exports the entry point symbol, then
+                the modules that exports all the symbols that it
+                imports, then recursively all the modules that are
+                needed to resolve imported symbols.
+                      The -cpu, -rom, and -map options provide values
                 than handcrafted code inside a module can test to
-                select different implementations.
-                * The -rom option informs the libraries about
-                  the availability of natively implemented SYS functions.
-                * The -cpu option enables instructions that were added
-                  in successive implementations of the Gigatron VCPU.
-                  Its default value depends on the -rom option.
-                * The -map option tells at which addresses the program,
-                  the data, and the stack should be located. It also tells
-                  which runtime libraries should be loaded by default.
-                  The map argument can be a map name followed by comma
-                  separated overlay names. Overlays are python files
-                  that tweak the map. These files are searched in
-                  the map directory or in the current directory
-                  if the overlay name starts with './'.
-                The final output file includes the module that exports
-                the entry point symbol, then the modules that exports
-                all the symbols that it imports, then recursively all
-                the modules that are needed to resolve imported
-                symbols.''')
+                select different implementations.  The -rom option
+                informs the libraries about the availability of
+                natively implemented SYS functions.  The -cpu option
+                enables instructions that were added in successive
+                implementations of the Gigatron VCPU.  Its default
+                value depends on the -rom option.  The -map option
+                selects prefined combinations of memory regions usable
+                for code, data, for the malloc heap. It also can
+                manipulate other linker options to suit particular
+                machines, for instance by inserting a library that
+                overrides some routines of the default library. The
+                map argument can be a map name, optionally followed by
+                comma separated overlays. Overlays are small files
+                that further customize the map. They are searched in
+                the map directory or in the current directory of the
+                overlay name starts with './'.  Use options --info to
+                learn more about a map and its default overlays.  Note
+                that glcc pragmas (see <gigatron/pragmas.h) are
+                preferred over custom overlay files.
+            ''')
         parser.add_argument('files', type=str, nargs='*',
                             help='input files')
         parser.add_argument('-o', type=str, default='a.gt1', metavar='GT1FILE',
@@ -2929,6 +3015,8 @@ def glink(argv):
                                     to get information about the selected map.''')
         parser.add_argument('-info', "--info", action='store_true',
                             help='describe the selected map, cpu, rom')
+        parser.add_argument('-segments', "--segments", action='store_true',
+                            help='print the segment list derived from map and pragmas')
         parser.add_argument('-V', "--version", action='store_true',
                             help='report glcc/glink version')
         parser.add_argument('-l', type=str, action='append', metavar='LIB',
@@ -2955,10 +3043,10 @@ def glink(argv):
                             help='defines an option string that can be leveraged by libraries')
         parser.add_argument('--short-function-size-threshold', dest='sfst',
                             metavar='SIZE', type=int, action='store',
-                            help='attempts to fit functions smaller than this threshold into a single page.')
+                            help='attempts to fit functions smaller than this threshold into a single page')
         parser.add_argument('--long-function-segment-size', dest='lfss',
                             metavar='SIZE', type=int, action='store',
-                            help='minimal segment size for functions split across segments.')
+                            help='minimal segment size for functions split across segments')
         parser.add_argument('--branch-jcc', dest='jcconly', action='store_true',
                             help='compile all conditional branches with Jcc (v6+)')
         parser.add_argument('--no-runtime-bss-initialization', action='store_true',
@@ -2966,6 +3054,9 @@ def glink(argv):
         parser.add_argument('--minimal-heap-segment-size', dest='mhss',
                             metavar='SIZE', type=int, action='store',
                             help='minimal heap segment size for __glink_magic_heap.')
+        parser.add_argument('--large-data-fragments-first', dest='ldff',
+                            metavar='SIZE', type=int, action='store',
+                            help='place large data fragments early (try this when they don\'t fit)')
         parser.add_argument('--labelchange-threshold', dest='rpth',
                             metavar='LBLCHG', type=int, action='store', default=200,
                             help='restart a pass whenever the label change counter reach this threshold')
@@ -2986,6 +3077,10 @@ def glink(argv):
         args.cpuflags = args.cpu[1:]
         args.cpu = int(args.cpu[0])
         args.files = args.files or []
+        args.initsp = None
+        args.initspsrc = None
+        args.place = []
+        args.pragsegs = []
 
         read_interface()
         create_zpage_map()
@@ -3025,21 +3120,21 @@ def glink(argv):
                         else:
                             print(f"  - {k} = {'{...}'}")
             else:
-                print(f" No information found on rom '{args.rom}'")
+                print(f"  No information found on rom '{args.rom}'")
             print()
             print('================= CPU INFO')
             if args.cpu == 7:
                 print('  vCPU 7 comes with the DEV7 roms and adds new opcodes to vCPU 5.\n'
-                      ' See https://github.com/lb3361/gigatron-rom/blob/master/Docs/vCPU7.md.')
+                      '  See https://github.com/lb3361/gigatron-rom/blob/master/Docs/vCPU7.md.')
             elif args.cpu == 6:
                 print('  vCPU 6 comes with at67'"'"'s ROMvX0 and contains many new opcodes\n'
-                      ' whose encoding might change from release to release. vCPU 6 is not\n'
-                      ' backward compatible with vCPU 5 because it gives different encoding\n'
-                      ' to the CMPHU and CMPHS opcodes. Program compiled for vCPU 5 do not\n'
-                      ' run reliably on ROMvX0 and programs compiled for vCPU 6 only run\n'
-                      ' on ROMvX0. Programs compiled with -rom=vx0 -cpu=5 try to navigate\n'
-                      ' these constraints and might run on the dev6 rom (proposed v6)\n'
-                      ' and later if one disables the rom check. Your mileage can vary.')
+                      '  whose encoding might change from release to release. vCPU 6 is not\n'
+                      '  backward compatible with vCPU 5 because it gives different encoding\n'
+                      '  to the CMPHU and CMPHS opcodes. Program compiled for vCPU 5 do not\n'
+                      '  run reliably on ROMvX0 and programs compiled for vCPU 6 only run\n'
+                      '  on ROMvX0. Programs compiled with -rom=vx0 -cpu=5 try to navigate\n'
+                      '  these constraints and might run on the dev6 rom (proposed v6)\n'
+                      '  and later if one disables the rom check. Your mileage can vary.')
             elif args.cpu == 5:
                 print('  vCPU 5 was introduced in ROMv5a with opcodes CALLI, CMPHU, CMPHS.')
             elif args.cpu == 4:
@@ -3050,6 +3145,10 @@ def glink(argv):
                 map_describe()
             else:
                 print(f"  No information found on map '{args.map}'")
+            print('================= SEGMENT LIST')
+            print(f"  Segment list defined by option -map='{','.join(sm)}':\n")
+            print_segments()
+            print()
             return 0
 
         # load all .s/.o/.a files
@@ -3060,6 +3159,10 @@ def glink(argv):
         for m in module_list:
             if m.cpu > args.cpu and not m.library:
                 warning(f"module '{m.name}' was compiled for cpu {m.cpu} > {args.cpu}")
+        if args.segments:
+            print("Segment list (from map, overlays, and pragmas):")
+            print_segments()
+            print()
 
         # load modules synthetized by the map
         if map_modules:

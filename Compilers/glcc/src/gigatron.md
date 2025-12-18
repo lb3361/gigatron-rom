@@ -114,7 +114,7 @@ static Symbol iregw, lregw, fregw;
 
 #define REGMASK_SAVED           0x000000ff
 #define REGMASK_ARGS            0x0000ff00
-#define REGMASK_MOREVARS        0x000fffff
+#define REGMASK_MOREVARS        0x000fff00
 #define REGMASK_TEMPS           0x00ffff00
 
 /* Misc */
@@ -814,10 +814,11 @@ fac: INDIRF5(addr)  "%{?*0=~FAC::_MOVF(%0,FAC)%{!A};}"       180
 fac: ADDF5(fac,farg) "%0%1_FADD()%{!A};"          200
 fac: ADDF5(farg,fac) "%1%0_FADD()%{!A};"          200
 fac: SUBF5(fac,farg) "%0%1_FSUB()%{!A};"          200
-fac: SUBF5(farg,fac) "%1_FNEG();%0_FADD()%{!A};"  200+50
+fac: SUBF5(farg,fac) "%1%0_FSUBR()%{!A};"         200
 fac: MULF5(fac,farg) "%0%1_FMUL()%{!A};"          200
 fac: MULF5(farg,fac) "%1%0_FMUL()%{!A};"          200
 fac: DIVF5(fac,farg) "%0%1_FDIV()%{!A};"          200
+fac: DIVF5(farg,fac) "%1%0_FDIVR()%{!A};"         200
 fac: NEGF5(fac)      "%0_FNEG()%{!A};"            50
 stmt: EQF5(fac,farg) "\t%0%1_FCMP();_BEQ(%a)%{!A};\n" 200
 stmt: NEF5(fac,farg) "\t%0%1_FCMP();_BNE(%a)%{!A};\n" 200
@@ -1073,6 +1074,10 @@ asgn: ASGNU1(rmw, LOADU1(ADDI2(CVUI2(INDIRU1(rmw)), con1))) "\tINC(%0);\n" if_rm
 asgn: ASGNI1(rmw, LOADI1(ADDI2(CVII2(INDIRI1(rmw)), con1))) "\tINC(%0);\n" if_rmw(a,16)
 asgn: ASGNI2(rmw, NEGI2(INDIRI2(rmw))) "\tNEGV(%0);\n" mincpu6(if_rmw(a, 26))
 asgn: ASGNI4(rmw, NEGI4(INDIRI4(rmw))) "\tNEGVL(%0);\n" mincpu6(if_rmw(a, 58))
+asgn: ASGNI4(rmw, LSHI4(INDIRI4(rmw),con1)) "\tLSLVL(%0);\n" mincpu6(if_rmw(a, 58))
+asgn: ASGNI4(rmw, LSHU4(INDIRU4(rmw),con1)) "\tLSLVL(%0);\n" mincpu6(if_rmw(a, 58))
+asgn: ASGNI4(rmw, BCOMI4(INDIRI4(rmw))) "\tNOTVL(%0);\n" mincpu6(if_rmw(a, 58))
+asgn: ASGNI4(rmw, BCOMU4(INDIRU4(rmw))) "\tNOTVL(%0);\n" mincpu6(if_rmw(a, 58))
 asgn: ASGNP2(rmw, ADDP2(INDIRP2(rmw), con1)) "\tINCV(%0);\n" mincpu6(if_rmw(a, 22))
 asgn: ASGNU2(rmw, ADDU2(INDIRU2(rmw), con1)) "\tINCV(%0);\n" mincpu6(if_rmw(a, 22))
 asgn: ASGNI2(rmw, ADDI2(INDIRI2(rmw), con1)) "\tINCV(%0);\n" mincpu6(if_rmw(a, 22))
@@ -1663,34 +1668,79 @@ static void progend(void)
         "\n# End:\n");
 }
 
+
+/* helper to validate pragma syntax,
+   parsing an intersection of c and python. */
+int validate_pragma(const char *s, const char *tpl)
+{
+  int si,ti;
+  for (si=ti=0; tpl[ti]; ti++)
+    if (tpl[ti]==' ') {
+      while (s[si]!='\n' && isspace(s[si])) { si++; }
+    } else if (tpl[ti]=='%' && tpl[ti+1]=='s') {
+      if (s[si++] != '\"') { return -si; }
+      while (s[si++] != '\"') {
+        if (s[si-1] == '\\') { si++; }
+        if (s[si-1] == '\n') { return -si; }
+      }
+      ti++;
+    } else if (tpl[ti]=='%' && tpl[ti+1]=='i') {
+      for(;;) {
+        while (s[si]!='\n' && isspace(s[si])) { si++; }
+        if (s[si] == '(') {
+          int n = validate_pragma(s+si+1, " %i ");
+          if (n < 0) { return n-si-1; } else { si += n+1; }
+          if (s[si++] != ')') { return -si; }
+        } else if (s[si] == '0') {
+          if (s[++si] == 'x' || s[si] == 'X')
+            while (isxdigit(s[++si])) {}
+        } else if (isdigit(s[si])) {
+          while (isdigit(s[si])) { si++; }
+        } else
+          return -si-1;
+        while (s[si]!='\n' && isspace(s[si])) { si++; }
+        if (strchr("><", s[si]) && s[si+1]==s[si]) { si+=2; }
+        else if (!strchr("+-*/&|", s[si++])) { si--; break; }
+      }
+      ti++;
+    } else {
+      if (tpl[ti]=='%' && tpl[ti+1]=='%') { ti++; }
+      if (tpl[ti] != s[si++]) { return -si; }
+    }
+  return si;
+}
+
+
 /* lcc callback: pragma */
 static int do_pragma()
 {
   int i;
-  unsigned char *s;
+  int mn=0;
+  char *s = (char*)cp;
+  char buf[10];
   static const char *patterns[] = {
-    "option ( \"%*[^\"]\" ) %n",
-    "lib ( \"%*[^\"]\" ) %n",
+    " option ( %s ) ",
+    " lomem ( %s , %s ) ",
+    " lib ( %s ) ",
+    " initsp ( %i ) ",
+    " onload ( %s ) ",
+    " segment ( %i , %i , %s ) ",
     0
   };
-
-  while (*cp == ' ' || *cp == '\t')
-    cp++;
-  for(s = cp; *s; s++)
-    if (*s == '\n')
-      break;
+  while (*s!='\n' && isspace(*s)) { s++; }
   for (i=0; patterns[i]; i++) {
-    int n = -1;
-    int c = *s;
-    *s = 0;
-    sscanf((char*)cp, patterns[i], &n);
-    *s = c;
-    if (n >= 0 && cp + n == s) {
-      xprint("# ======== pragma\npragma_%S\n\n", cp, n);
+    int n = validate_pragma(s, patterns[i]);
+    if (n > 0 && s[n] == '\n') {
+      xprint("# ======== pragma\npragma_%S\n\n", s, n);
       return 1;
+    } else if (n < mn) {
+      mn = n;
     }
   }
-  return 0;
+  strncpy(buf, s-mn-1, sizeof(buf));
+  buf[sizeof(buf)-1] = 0;
+  warning("#pragma glcc: parsing error near '%s'\n", buf);
+  return 1;
 }
 
 
@@ -1810,13 +1860,12 @@ static void target(Node p)
     }
 }
 
-static int inst_contains_call(Node p)
+static Attribute check_quickcall(Attribute a)
 {
-  if ((generic(p->op) == CALL) ||
-      (p->kids[0] && !p->kids[0]->x.inst && inst_contains_call(p->kids[0])) ||
-      (p->kids[1] && !p->kids[1]->x.inst && inst_contains_call(p->kids[1])) )
-    return 1;
-  return 0;
+  const char *qc = string("quickcall");
+  while (a && a->name != qc)
+    a = a->link;
+  return a;
 }
 
 /* lcc callback: mark caller-saved registers as clobbered. */
@@ -1836,7 +1885,7 @@ static void clobber(Node p)
       freemask[0] &= ~r->x.regnode->mask;
     }
   }
-  if (inst_contains_call(p)) {
+  if (generic(p->op) == CALL && !check_quickcall(p->syms[1]->attr)) {
     /* Clobber all caller-saved registers before a call. */
     unsigned mask =  REGMASK_TEMPS & ~REGMASK_SAVED;
     if (p->x.registered && p->syms[2] && p->syms[2]->x.regnode->set == IREG)
@@ -1844,7 +1893,7 @@ static void clobber(Node p)
     if (mask)
       spill(mask, IREG, p);
   }
-  if (argmask && p->x.next && inst_contains_call(p->x.next)) {
+  if (argmask && p->x.next && generic(p->x.next->op) == CALL) {
     /* Free all argument registers before the call */
     freemask[0] |= argmask;
     argmask = 0;
@@ -2324,8 +2373,31 @@ static const char* check_idval(Attribute a, int n)
       else if (!isalpha(s[0]) && s[0] != '_')
         return 0;
     }
+    return stringf("'%s'", str);
   }
-  return stringf("'%s'", str);
+  return 0;
+}
+
+static const int check_quickcall_proto(Type ty)
+{
+  int i;
+  int rnum = 0;
+  if (isptr(ty)) ty = ty->type;
+  assert(isfunc(ty));
+  if (!ty->u.f.proto)
+    error("extern quickcall declaration without prototype\n");
+  for (i=0; ty->u.f.proto[i]; i++)
+    switch(optype(ty->u.f.proto[i]->op)) {
+    default:
+      error("cannot pass quickcall argument %d by register\n", i+1);
+    case I: case U: case P: case F:
+      rnum += roundup(ty->u.f.proto[i]->size,2)/2;
+      if (rnum > 8)
+        error("too many arguments in quickcall declaration\n");
+      break;
+    }
+  /* return mask with registers being used */
+  return REGMASK_ARGS & ~(REGMASK_ARGS << rnum);
 }
 
 static const char *check_attributes(Symbol p)
@@ -2340,33 +2412,48 @@ static const char *check_attributes(Symbol p)
   if (p->scope == GLOBAL || is_static || is_extern) {
     for (a = p->attr; a; a = a->link) {
       char yes = 0;
-      if (a->name == string("place") && !is_extern) {
+      a->okay = 0;
+      if (a->name == string("place")) {
+        if (is_extern)
+          error("external symbols do not obey placement constraint\n");
         if (has_org)
-          error("incompatible placement constraints (org & place)\n");
+          warning("org attribute overrides placement constraints\n");
         a->okay = (check_uintval(a,0) &&  check_uintval(a,1));
         yes = has_place = 1;
       } else if (a->name == string("org")) {
         if (has_org)
-          error("incompatible placement constraints (multiple org)\n");
-        else if (has_place)
-          error("incompatible placement constraints (org & place)\n");
+          error("multiple org attributes\n");
+        else if (has_place || has_off)
+          warning("org attribute overrides placement constraints\n");
         a->okay = (check_uintval(a,0) && !a->args[1]);
         yes = has_org = 1;
-      } else if (a->name == string("offset") && !is_extern) {
+      } else if (a->name == string("offset")) {
+        if (is_extern)
+          error("external symbols do not obey placement constraint\n"); 
         if (has_off)
-          error("incompatible placement constraints (multiple offsets)\n");
+          warning("multiple offset contraints");
+        if (has_org)
+          warning("org attribute overrides all placement constraints\n");
         a->okay = (check_uintval(a,0) && !a->args[1]);
         yes = has_off = 1;
-      } else if (a->name == string("nohop") && !is_extern) {
+      } else if (a->name == string("nohop")) {
+        if (is_extern)
+          error("external symbols do not obey nohop constraints\n");
         a->okay = (!a->args[0] && !a->args[1]);
         yes = 1;
-      } else if (a->name == string("alias") && is_extern && !alias) {
+      } else if (a->name == string("alias") && !alias && is_extern) {
         alias = check_idval(a, 0);
         a->okay = (alias!=0 && !a->args[1]);
         yes = 1;
-      } else if (a->name == string("regalias") && is_extern && !alias) {
+      } else if (a->name == string("regalias") && !alias && is_extern) {
         alias = check_strval(a, 0);
         a->okay = (alias!=0 && findreg(alias) && !a->args[1]);
+        yes = 1;
+      } else if (a->name == string("quickcall") && p->type && isfunc(p->type)) {
+        if (!is_extern)
+          error("a function written in C cannot be declared quickcall\n");
+        check_quickcall_proto(p->type);
+        a->okay = (!a->args[0] && !a->args[1]);
         yes = 1;
       }
       if (yes && !a->okay)
@@ -2451,8 +2538,7 @@ static void doarg(Node p)
   Symbol r;
   Node c;
   if (argoffset == 0) {
-    argno = 0;
-    argmaxno = 0;
+    argno = argmaxno = 0;
     for (c=p; c; c=c->link)
       if (generic(c->op) == CALL ||
           (generic(c->op) == ASGN && generic(c->kids[1]->op) == CALL &&
@@ -2504,6 +2590,27 @@ static void printregmask(unsigned mask) {
     print("None");
 }
 
+/* Utility for counting quick calls */
+static int count_quickcalls(int *mask) {
+  int count = 0;
+  Code cp;
+  Node n,c;
+  for (cp=&codehead; cp; cp=cp->next)
+    if  (cp->kind == Gen) // || cp->kind == Jump || cp->kind == Label)
+      for (n=cp->u.forest; n; n = n->link) {
+        c = n;
+        if (generic(c->op) == ASGN)
+          c = c->kids[1];
+        if (c && generic(c->op) == CALL && check_quickcall(c->syms[0]->attr)) {
+          count += 1;
+          if (mask)
+            *mask &= ~check_quickcall_proto(c->syms[0]->type);
+        }
+      }
+  return count;
+}
+
+
 /* lcc callback: compile a function. */
 static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls)
 {
@@ -2523,6 +2630,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls)
   char frameless;
   struct constraints place;
   Symbol r;
+  int morevars = REGMASK_MOREVARS;
+  int nqcalls = count_quickcalls(&morevars);
 
   usedmask[0] = usedmask[1] = 0;
   freemask[0] = freemask[1] = ~(unsigned)0;
@@ -2530,13 +2639,10 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls)
   maxargoffset = 0;
   assert(f->type && f->type->type);
   ty = ttob(f->type->type);
-  if (ncalls) {
-    tmask[IREG] = REGMASK_TEMPS;
-    vmask[IREG] = REGMASK_SAVED;
-  } else {
-    tmask[IREG] = REGMASK_TEMPS;
-    vmask[IREG] = REGMASK_MOREVARS;
-  }
+  tmask[IREG] = REGMASK_TEMPS;
+  vmask[IREG] = REGMASK_SAVED;
+  if (ncalls == nqcalls)
+    vmask[IREG] |= morevars;
   tmask[IREG] &= ~rmask;
   vmask[IREG] &= ~rmask;
   /* placement constraints */
@@ -2553,8 +2659,8 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls)
     p->x.name = q->x.name = stringd(offset);
     r = argreg(i, optype(ttob(q->type)), q->type->size, &roffset);
     offset += q->type->size;
-    if (r) {
-      if (ncalls == 0 && !p->addressed && p->ref > 0) {
+    if (r && p->ref > 0) {
+      if (!p->addressed && ncalls == nqcalls && !(r->x.regnode->mask & ~morevars)) {
         /* Leaf function: leave register arguments in place */
         p->sclass = q->sclass = REGISTER;
         askregvar(p, r);
@@ -2563,7 +2669,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls)
         q->type = p->type;
       } else {
         /* Aggressively ask new registers for args passed in registers */
-        if (!p->addressed && p->ref > 0)
+        if (!p->addressed)
           p->sclass = REGISTER;
         /* Let gencode know args were passed in register */
         q->sclass = REGISTER;
@@ -2582,7 +2688,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls)
   /* compute framesize */
   savemask = usedmask[IREG] & REGMASK_SAVED;
   sizesave = 2 * bitcount(savemask);
-  maxargoffset = (maxargoffset + 1) & ~0x1;
+  maxargoffset = (nqcalls == ncalls) ? 0 : (maxargoffset + 1) & ~0x1;
   maxoffset = (maxoffset + 1) & ~0x1;
   framesize = maxargoffset + sizesave + maxoffset + 2;
   assert(framesize >= 2);
@@ -2590,7 +2696,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls)
     error("%s() framesize (%d) too large for a gigatron\n",
           f->name, framesize);
   /* can we make a frameless leaf function */
-  if (ncalls == 0 && framesize == 2 && (tmask[IREG] & ~usedmask[IREG])) {
+  if (ncalls == nqcalls && framesize == 2 && (tmask[IREG] & ~usedmask[IREG])) {
     framesize = (cpu < 7) ? 0 : 2;  /* are SP and vSP the same? */
     frameless = 1;
   } else if (IR->longmetric.align == 4) {

@@ -85,11 +85,11 @@ extern double _ldexp10p(const double *x, int n);
 extern int _frexp10p(double *x);
 
 /* Like the C99 function remquo but with fmod-style remainder. */
-extern double _fmodquo(double x, double y, int *quo);
+extern double _fmodquo(double x, double y, int *quo) __attribute__((quickcall));
 
 /* Evaluate polynomials */
-extern double _polevl(double x, double *coeff, int n);
-extern double _p1evl(double x, double *coeff, int n);
+extern double _polevl(double x, double *coeff, int n) __attribute__((quickcall));
+extern double _p1evl(double x, double *coeff, int n) __attribute__((quickcall));
 
 
 /* ---- Stdio ---- */
@@ -99,6 +99,7 @@ extern double _p1evl(double x, double *coeff, int n);
    called with fp->_flag containing the desired read/write mode
    and fp->_file set to -1 or set to a desired file descriptor. */
 extern int _openf(FILE *fp, const char *fname);
+
 
 /* ---- Bitsets ---- */
 
@@ -137,7 +138,6 @@ extern char *_ultoa(unsigned long value, char *bufend, int radix);
 
 extern char *dtoa(double x, char *buf, int format, int prec);
 
-
 /* Converts a number in range 0 to 99 into decimal,
    two ascii digits packed in the returned integer.
    This is a compact self-contained function. */
@@ -145,6 +145,30 @@ extern char *dtoa(double x, char *buf, int format, int prec);
 extern int _utwoa(int);
 
 
+/* ---- Banking ---- */
+
+/* Return an opaque result that summarizes the banking state. */
+extern void *_membank_save(void) __attribute__((quickcall));
+
+/* Restore previously saved banking state. */
+extern void _membank_restore(void *saved) __attribute__((quickcall));
+
+/* Sets a particular memory bank in address range 0x8000-0xffff.
+   Bank is truncated to range 0..3 on 128k gigatrons.
+   Bank may be in range 0..15 when the 512k map is active. */
+extern void _membank_set(int bank) __attribute__((quickcall));
+
+/* Return the bank currently mapped in address range 0x8000-0xffff.
+   This function requires a 512k rom when the 512k map is active. */
+extern int _membank_get(void) __attribute__((quickcall));
+
+/* These two functions only do something with -map=128k or -map=512k.
+   They can be used to temporarily access the frame buffer.
+   - with -map=128k, the videotable gives the row addresses.
+   - with -map=512k, add 0x8000 to the videotable row addresses.
+   Beware where the stack is located! */
+extern void _membank_set_framebuffer_bank(void) __attribute__((quickcall));    
+extern void _membank_set_program_bank(void) __attribute__((quickcall));
 
 
 /* ---- Misc ---- */
@@ -184,9 +208,9 @@ extern void _memswp(void *a, void *b, size_t n);
    but only contains 24 bits numbers (0 to 16M). The alternative
    entry point _clock() returns a 16 bits integer which is often
    sufficient and avoids long int overhead. */
-extern unsigned int _clock(void);
+extern unsigned int _clock(void) __attribute__((quickcall));
 
 /* Wait for n vertical blanks (or n clocks) */
-extern void _wait(int n);
+extern void _wait(int n) __attribute__((quickcall));
 
 #endif

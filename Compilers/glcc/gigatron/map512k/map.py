@@ -20,16 +20,38 @@ def map_describe():
 # memory is sufficient. It avoids loading anything in 0x8200-0x8240 to
 # avoid overwriting the stub on a 32KB machine.
 
-# ------------size----addr----step----end---- flags (1=nocode, 2=nodata, 4=noheap)
-segments = [ (0x00fa, 0x0200, 0x0100, 0x0500, 0),
-             (0x0200, 0x0500, None,   None,   0),
-             (0x7800, 0x0800, None,   None,   0),
-             (0x0200, 0x8000, None,   None,   0),
-             (0x7AC0, 0x8240, None,   None,   0) ]
+# Flags is now a string with letters:
+# - 'C' if the segment can contain code
+# - 'D' if it can contain data
+# - 'H' if it can be used for the malloc heap.
+# Using lowercase letters instead mean that use is permitted
+# when an explicit placement constraint is provided.
+#
+# ------------size----addr----step----end------flags
+segments = [ (0x7dc0, 0x8240, None,   None,   'CDH'),
+             (0x00fa, 0x0200, 0x0100, 0x0500, 'CDH'),
+             (0x0200, 0x0500, None,   None,   'CDH'),
+             (0x7000, 0x0800, None,   None,   'CDH'),
+             (0x01b8, 0x8048, None,   None,   'CDH') ]
 
-initsp = 0xfffc
+# initial stack
+args.initsp = 0x7ffc
+
+# tweak long fonction placement
+args.lfss = args.lfss or 128
+args.sfst = args.sfst or 256
+
+# Specify an onload function to reorganize the memory
+args.onload.append('_map512ksetup')
+
+# Provide an option to identify the map and enable specific
+# code that switches banks to access the framebuffer.
+args.opts.append('MAP512K')
+
+# redefined by overlays
 libcon = "con_b"
 check512krom = True
+
 
 def map_segments():
     '''
@@ -66,7 +88,7 @@ def map_modules(romtype):
         org(0x200)
         label('_gt1exec')
         # Set stack
-        LDWI(initsp);STW(SP);
+        LDWI(args.initsp);STW(SP);
         if check512krom:
             # Check presence of patched rom
             LD(0xa);ANDI(0xfc);XORI(0xfc);BNE('.err')
@@ -81,10 +103,12 @@ def map_modules(romtype):
             LD('romType');ANDI(0xfc);SUBI(romtype);BLT('.err')
         # Call _start
         LDWI(v(args.e));CALL(vAC)
-        # Run sanitized version of Marcel's smallest program when machine check fails
+        # Run Marcel's smallest program when machine check fails
         label('.err')
-        LDW('frameCount');STW(vLR);ANDI(0x7f);BEQ('.err');
-        LDW(vLR);DOKE(vPC+1);BRA('.err')
+        LDW('frameCount')
+        if args.cpu == 6: # Marcel smallest program is nasty on vx0
+            STW(vLR);ANDI(0x7f);BEQ('.err');LDW(vLR)
+        DOKE(vPC+1);BRA('.err')
 
     module(name='_gt1exec.s',
            code=[ ('EXPORT', '_gt1exec'),
