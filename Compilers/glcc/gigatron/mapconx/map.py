@@ -18,14 +18,21 @@ def map_describe():
   ''')
 
 
-# ------------size----addr----step----end---- flags (1=nocode, 2=nodata, 4=noheap)
-segments = [ (0x0060, 0x2fa0, 0x0100, 0x80a0, 0),
-	     (0x00fa, 0x0200, 0x0100, 0x0500, 0),
-	     (0x0200, 0x0500, None,   None,   0),
-             (0x2300, 0x0800, None,   None,   0),
+# Flags is now a string with letters:
+# - 'C' if the segment can contain code
+# - 'D' if it can contain data
+# - 'H' if it can be used for the malloc heap.
+# Using lowercase letters instead mean that use is permitted
+# when an explicit placement constraint is provided.
+#
+# ------------size----addr----step----end-----flags
+segments = [ (0x0060, 0x2fa0, 0x0100, 0x80a0, 'CDH'),
+             (0x00fa, 0x0200, 0x0100, 0x0500, 'CDH'),
+             (0x0100, 0x0500, None,   None,   'CDH'),
+             (0x2300, 0x0800, None,   None,   'CDH')
 ]
 
-initsp = 0x2efc
+args.initsp = 0x2efc
 minram = 0x80
 args.lfss = args.lfss or 128
 
@@ -64,7 +71,7 @@ def map_modules(romtype):
         org(0x200)
         label('_gt1exec')
         # Set stack
-        LDWI(initsp);STW(SP);
+        LDWI(args.initsp);STW(SP);
         # Check rom and ram
         if romtype and romtype >= 0x80:
             LD('romType');ANDI(0xfc);XORI(romtype);BNE('.err')
@@ -76,10 +83,12 @@ def map_modules(romtype):
             LD('memSize');SUBI(1);ANDI(0xff);SUBI(minram-1);BLT('.err')
         # Call _start
         LDWI(v(args.e));CALL(vAC)
-        # Run sanitized version of Marcel's smallest program when machine check fails
+        # Run Marcel's smallest program when machine check fails
         label('.err')
-        LDW('frameCount');STW(vLR);ANDI(0x7f);BEQ('.err');
-        LDW(vLR);DOKE(vPC+1);BRA('.err')
+        LDW('frameCount')
+        if args.cpu == 6: # Marcel smallest program is nasty on vx0
+            STW(vLR);ANDI(0x7f);BEQ('.err');LDW(vLR)
+        DOKE(vPC+1);BRA('.err')
 
     module(name='_gt1exec.s',
            code=[ ('EXPORT', '_gt1exec'),

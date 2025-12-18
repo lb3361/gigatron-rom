@@ -37,6 +37,8 @@ def scope():
             LD(R9);STW(T3)
             LDW(R10)
             FILL();
+        else:
+            error('SYS_Fill is not available with cpu < 7')
         RET()
 
     module(name='sys_fill.s',
@@ -56,6 +58,8 @@ def scope():
             MOVW(R9,T3)
             LDW(R10)
             BLIT();
+        else:
+            error('SYS_Blit is not available with cpu < 7')
         RET()
 
     module(name='sys_blit.s',
@@ -144,11 +148,11 @@ def scope():
         _MOVW(R9,T2)
         _MOVIW('sysArgs0',T3)
         if args.cpu >= 6:
-            MOVQB(8,R10)
+            MOVQB(8,R9)
             label('.loop')
             PEEKV(T3);POKE(T2)
             INCV(T2);INCV(T3)
-            DBNE(R10,'.loop')
+            DBNE(R9,'.loop')
         else:
             label('.loop')
             _PEEKV(T3);POKE(T2)

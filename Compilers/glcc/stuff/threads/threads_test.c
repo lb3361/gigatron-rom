@@ -29,7 +29,7 @@ void safe_cprintf(int x, int y, int clr, const char *fmt, ...)
 	va_list ap;
 	va_start(ap, fmt);
 #if 1 /* sprintf must be reentrant */
-	static char buffer[256];
+	static char buffer[96];
 	vsnprintf(buffer, sizeof(buffer), fmt, ap);
 	gt_mutex_lock(&console_mutex);
 	textcolor(clr);
@@ -119,7 +119,7 @@ void run_elapsed(void *arg)
 int main(void)
 {
 	gt_start(&th1, th1s, sizeof(th1s), run_primes, 0);
-	gt_start(&th2, th2s, sizeof(th1s), run_maze, 0);
+	gt_start(&th2, th2s, sizeof(th2s), run_maze, 0);
 	run_elapsed(0);
 	safe_cputs(1, 9, LIGHTMAGENTA, "Finished!");
 	return 0;

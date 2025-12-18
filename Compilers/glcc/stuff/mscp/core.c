@@ -7,7 +7,31 @@
 
 #include "core.h"
 
-int prebooksize = 0;
+#if _GLCC_VER < 206046
+# error "Need GLCC>=2.6.46 to compile this".
+#endif
+
+#pragma glcc lomem("core.c", "*")
+#pragma glcc lomem("*", "memset")
+#pragma glcc lomem("*", "memcpy")
+#pragma glcc lomem("*", "SYS_*")
+#pragma glcc lomem("rt_*.s", "_*@*")
+
+#pragma glcc onload("mscp_onload")
+
+void mscp_onload(void)
+{
+  /* This onload function runs before the bss zeroing.
+     Its role is to copy the merged book data into bank 3. */
+  register byte cb = ctrlBits_v5;
+  SYS_ExpanderControl(cb | 0xc0);
+  memcpy((void*)0xc000,(void*)0x4000,0x4000);
+  SYS_ExpanderControl(cb);
+}
+
+/* This variable is overwritten when merging the book */
+near int prebooksize __at(0x42) = 0;
+
 near int booksize = 0;         /* Number of opening book entries */
 near int bkindex = -1;         /* Current book table index */
 struct tt ttentry;             /* Current transposition table entry */
@@ -35,7 +59,7 @@ void clr_ttable(void)
 {
   register byte cb = ctrlBits_v5;
   SYS_ExpanderControl(cb | 0xc0);
-  memset((void*)TTPTR, 0, CORE * sizeof(struct tt)); /* memset does not PUSH */
+  memset((void*)TTPTR, 0, CORE * sizeof(struct tt));
   SYS_ExpanderControl(cb);
 }
 
@@ -91,8 +115,7 @@ void preload_book(const char *filename)
 
 void load_book(const char *filename)
 {
-  if (prebooksize) 
-    booksize = prebooksize / sizeof(struct bk);
+  booksize = prebooksize / sizeof(struct bk);
   printf("Opening book size: %d\n", booksize);
 }
 
