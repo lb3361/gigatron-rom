@@ -5,7 +5,7 @@ D=../
 all: ${D}gtmine.gt1
 
 ${D}gtmine.gt1: gtmine.c
-	${GLCC} -o $@ gtmine.c -DMEM32=1 -map=32k,./gtmine32.ovl -rom=${ROM}
+	${GLCC} -o $@ gtmine.c -DMEM32=1 -map=32k -rom=${ROM}
 
 ${D}gtmine64.gt1: gtmine.c
 	${GLCC} -o $@ gtmine.c -DMEM32=0 -map=64k -rom=${ROM}
