@@ -18,7 +18,7 @@ const struct console_info_s console_info =
 void _console_reset(int fgbg)
 {
   char i;
-  char fg;
+  char fg; 
   int *table = (int*)videoTable;
   if (fgbg >= 0)
     _console_clear(screenMemory[16], fgbg, 104);

@@ -11,9 +11,15 @@
 #include <gigatron/libc.h>
 #include <gigatron/console.h>
 
-#define CMDVERBOSE 0
-#define INITVERBOSE 0
-#define MULTIPLE 0
+#ifndef CMDVERBOSE
+# define CMDVERBOSE 0
+#endif
+#ifndef INITVERBOSE
+# define INITVERBOSE 0
+#endif
+#ifndef MULTIPLE
+# define MULTIPLE 0
+#endif
 
 /*-----------------------------------------------------------------------*/
 /* Private                                                               */
@@ -308,7 +314,7 @@ DRESULT disk_read (BYTE drv,        /* Physical drive nmuber to identify the dri
 {
     register BYTE c;
     register DWORD sect = (DWORD)sector;
-    
+
     if (drv & 0xfe)
         return RES_PARERR;
     if (Stat[drv] & (STA_NOINIT|STA_NODISK))

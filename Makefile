@@ -47,8 +47,8 @@ DEV7APPS=	RacerHorizon=Apps/Racer/Horizon-256x16.gt1z\
 		Apple1=Apps/Apple-1/Apple-1_v3.gt1z\
 		MSBASIC=Apps/MSBASIC/MSBASIC.gt1z\
 		Credits=Apps/Credits/Credits.gt1z\
-		Frogstroll=Apps/More/frogstroll.gt1z\
-		Shuttle=Apps/More/shuttle.gt1z\
+		Frogstroll=Apps/Frogstroll/frogstroll.gt1z\
+		Shuttle=Apps/Shuttle/shuttle.gt1z\
 		Egg=Apps/Horizon/Horizon_c.gt1z
 
 dev7.rom: Core/* Apps/*/* Makefile interface.json

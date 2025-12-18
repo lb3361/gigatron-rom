@@ -165,6 +165,12 @@ export class Loader {
         }
         // Set channelMask
         this.cpu.ram[0x21] |= channels;
+        // Zero exec address loops forever
+        if (! execaddr) {
+            execaddr = 0x22
+            this.cpu.ram[0x22] = 0xb4; // HALT
+            this.cpu.ram[0x23] = 0x80;
+        }
         // Set the vPC and vLR exec address
         this.cpu.ram[0x16] = (execaddr - 2) & 0xff;
         this.cpu.ram[0x17] = (execaddr >> 8) & 0xff;
