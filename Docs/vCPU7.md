@@ -671,22 +671,22 @@ Its sole purpuse is to make locations `0x1f2-0x1f5` available for other purposes
 This instruction was implemented to shorten the reset sequence at
 address `0x1f0` which used to be six bytes long and is now only two
 bytes long. The locations `0x1f2-0x1f5` can then be used for other
-purposes such as `vIrqCtx_v7` or `ledTempo_v7`.
+purposes such as `vIrqCtx_v7`.
 
-Variable `ledTempo` has been displaced to a new location
-`ledTempo_v7` at address 0x1f3. The old location is now used by the
-private variable `vTmp` which is used as a scratch variable by the
-implementation of many vCPU instructions. This means that writing
+
+Variable `ledTempo` has been eliminated. Its old location is now used
+by the private variable `vTmp` which is used as a scratch variable by
+the implementation of many vCPU instructions. This means that writing
 anything into the old `ledTempo` location is harmless but will be
-quickly overwritten by any of the many vCPU opcodes
-whose implementation uses `vTmp`.
+quickly overwritten by any of the many vCPU opcodes whose
+implementation uses `vTmp`.
 
 Some private system variables have also been changed to make space for
 two critical variables used by `dev128k7.rom` to separate the memory
-bank used for video output and the memory bank seen by the vCPU, which
-was the project that started the whole DEV7ROM adventure.  The led
-timer has been moved to address 0x1f4, and, on `dev128k7.rom`, the
-third byte of the entropy counter has been moved to address 0x1f2.
+bank used for video output and the memory bank seen by the vCPU. This
+was the project that started the whole DEV7ROM adventure.  More
+precisely, the led timer has been eliminated and, on `dev128k7.rom`,
+the third byte of the entropy counter has been moved to address 0x1f2.
 Their former locations are now used to cache the control bits that
 should be used during video generation and during vcpu
 execution. Although overwriting these variables can crash the
@@ -696,7 +696,10 @@ overwritten by the gigatron firmware.
 
 Except for `ledTempo` discussed above, all other public system
 variables documented in `interface.json` remain at the same location
-and perform the same task. For instance, the recommended way to
-control the LEDs is to stop the sequencer by setting `ledState_v2` to
-a positive value (e.g. 1) and writing the desired led state into the
-low four bits of variable `xoutMask` (see program `BASIC/LEDS.gtb`).
+and perform the same task. For instance, since ROMv2, the recommended
+way to control the leds consists of stopping the sequencer by writing
+a positive value (e.g. 1) into `ledState_v2`, writing the desired led
+state into the low four bits of variable `xoutMask`, and, when needed,
+restart the sequencer by writing zero to `ledState_v2` (see program
+`BASIC/LEDS.gtb`). This still works despite the fact that
+`ledState_v2` now also assumes the role of the led timer.
