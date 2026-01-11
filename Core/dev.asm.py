@@ -449,8 +449,8 @@ videoTable      = 0x0100 # Indirection table: Y[0] dX[0]  ..., Y[119] dX[119]
 vReset          = 0x01f0 # Reset stub
 if WITH_128K_BOARD:
   entropy2      = 0x01f2 # (displaced) Entropy hidden state
-ledTempo        = 0x01f3 # (displaced) Led timer reset value
-ledTimer        = 0x01f4 # (displaced) Ticks until next LED change
+reserved_1f3    = 0x01f3 # (was ledTempo_v7)
+reserved_1f4    = 0x01f4 # (was ledTimer_v7)
 vIrqCtx_v7      = 0x01f5 # context page for irq
 vIRQ_v5         = 0x01f6 # vIRQ vector
 ctrlBits        = 0x01f8 # Expansion control bits
@@ -1254,69 +1254,52 @@ xora(64+32+8+4)                 #49(!)
 adda([entropy+1])               #50
 st([entropy+1])                 #51
 
-# LED sequencer (15 cycles)
-ld([Y,ledTimer])                #52 Blinkenlight sequencer
-suba(1)                         #53
-bne('.leds#56')                 #54
-st([Y,ledTimer])                #55
-ld(1)                           #56
-adda([ledState_v2])             #57
+
+# LED sequencer (15 cycles) [fixed tempo, ledState_v2 only]
+ld([ledState_v2])               #52
+bge('.leds#55')                 #53 > skip
+adda(0x10)                      #54 timer++
+blt('.leds#57')                 #55 > state unchanged
+adda(0xf1)                      #56
+bne(pc()+3)                     #57
 label('.leds#58')
-bne(pc()+3)                     #58
-bra(pc()+3)                     #59
-if not WITH_128K_BOARD:
-  ld(-24)                       #60 State 0 becomes -24, start of sequence
-else:
-  ld(-12)                       #60 Reduced sequence for dev128k7.rom
-bgt('.leds#62')                 #60(!) Catch the stopped state (>0)
-st([ledState_v2])               #61
-adda('.leds#65')                #62
-bra(AC)                         #63 Jump to lookup table
-bra('.leds#66')                 #64 Single-instruction subroutine
-label('.leds#56')
-bge('.leds#58')                 #56
-ld([ledState_v2])               #57
-ld([Y,ledTempo])                #58
-st([Y,ledTimer])                #59
-bra(pc()+1)                     #60
-nop()                           #61,62
-bra('.leds#65')                 #63
-ld([xoutMask])                  #64
-label('.leds#62')
-ld(0xf)                         #62 Maintain stopped state
-st([ledState_v2])               #63
+bra('.leds#60')                 #58
+ld(0xa4)                        #59
+suba(0x50)                      #59!
+label('.leds#57')
+suba(0xf1)                      #57
+bra(pc()+1)                     #58
+label('.leds#60')
+st([ledState_v2])               #60,59
+ora(0xf0)                       #61
+adda('.leds.table')             #62
+bra(AC)                         #63
 bra('.leds#66')                 #64
-anda([xoutMask])                #65
 ld(0b1111 & ledBits)            #65 LEDs |****| offset -24 Low 4 bits are the LED output
 ld(0b0111 & ledBits)            #65 LEDs |***O|
 ld(0b0011 & ledBits)            #65 LEDs |**OO|
 ld(0b0001 & ledBits)            #65 LEDs |*OOO|
-if not WITH_128K_BOARD:
-  ld(0b0010 & ledBits)          #65 LEDs |O*OO|
-  ld(0b0100 & ledBits)          #65 LEDs |OO*O|
-  ld(0b1000 & ledBits)          #65 LEDs |OOO*|
-  ld(0b0100 & ledBits)          #65 LEDs |OO*O|
-  ld(0b0010 & ledBits)          #65 LEDs |O*OO|
-  ld(0b0001 & ledBits)          #65 LEDs |*OOO|
 ld(0b0011 & ledBits)            #65 LEDs |**OO|
 ld(0b0111 & ledBits)            #65 LEDs |***O|
 ld(0b1111 & ledBits)            #65 LEDs |****|
 ld(0b1110 & ledBits)            #65 LEDs |O***|
 ld(0b1100 & ledBits)            #65 LEDs |OO**|
 ld(0b1000 & ledBits)            #65 LEDs |OOO*|
-if not WITH_128K_BOARD:
-  ld(0b0100 & ledBits)          #65 LEDs |OO*O|
-  ld(0b0010 & ledBits)          #65 LEDs |O*OO|
-  ld(0b0001 & ledBits)          #65 LEDs |*OOO|
-  ld(0b0010 & ledBits)          #65 LEDs |O*OO|
-  ld(0b0100 & ledBits)          #65 LEDs |OO*O|
-  ld(0b1000 & ledBits)          #65 LEDs |OOO*|
 ld(0b1100 & ledBits)            #65 LEDs |OO**|
 ld(0b1110 & ledBits)            #65 LEDs |O***| offset -1
-label('.leds#65')
-anda(ledBits)                   #65 Clear sound bits (0x0f)
+label('.leds.table')
+label('.leds#55')
+ld([ledState_v2])               #55
+beq('.leds#58')                 #56
+ld(0xf)                         #57 fussy compat
+st([ledState_v2])               #58 fussy compat
+wait(64-59)                     #59
+ld([xoutMask])                  #64
+anda(ledBits)                   #65
 label('.leds#66')
 st([xoutMask])                  #66 Sound bits will be re-enabled below
+
+# Reset videoPulse
 ld(vPulse*2)                    #67 vPulse default length when not modulated
 st([videoPulse])                #68
 
@@ -1329,14 +1312,14 @@ st([videoPulse])                #68
 # last case there is no solution yet: give a warning.
 if soundDiscontinuity == 2:
   st(sample, [sample])          # Sound continuity
-  vBlankFirstExtra += 1
+  vBlankFirstExtra += 1         # one extra cycle
 if soundDiscontinuity > 2:
   highlight('Warning: sound discontinuity not suppressed')
 
 if WITH_128K_BOARD:
   # The cpu bank is enabled during vblank.
   # Rebuild ctrlBits{Video,Copy} since Y=1
-  # at the cost of 7 extra cycles.
+  # at the cost of 6 extra cycles.
   ld([Y,ctrlBits])              #+1
   st([ctrlCopy],X)              #+2
   ctrl(X)                       #+3
@@ -1378,17 +1361,15 @@ runVcpu_new(vBlankEnterCyc-vBlankFirstExtra-84,
     '---D line 0 no timeout' )  #84
 
 
-# ------- first vblank line
+# ------- normal vblank lines
 #
-# This is executed during normal video blanking lines.  This code can
-# into the last vblank line code or execute vcpu instructions during
-# the remaining time.
+# This is executed during all remaining video blanking lines,
+# possibly jumping into specific code for the last vblank line.
 
 
 # New scan line
 label('vBlankEnter')
 ld([videoSync0],OUT)            #0 <New scan line start>
-label('sound1')
 ld([channel])                   #1 Advance to next sound channel
 anda([channelMask])             #2
 adda(1)                         #3
@@ -1415,14 +1396,13 @@ anda(63)                        #23
 ld(63)                          #23(!)
 adda([sample])                  #24
 st([sample])                    #25
-
-ld([xout])                      #26 Gets copied to XOUT
+ld([xout])                      #26 Gets copied to XOUT register
 ld(hi('vBlankLast#34'),Y)       #27 Prepare jumping out of page in last line
 ld([videoSync0],OUT)            #28 End horizontal pulse
 
 # Count through the vertical blank interval until its last scan line
 ld([videoY])                    #29
-bpl('.vBlankLast#32')           #30
+bpl('.vBlankLast#32')           #30 Jump to last vertical blanking line code
 adda(2)                         #31
 st([videoY])                    #32
 
@@ -1634,10 +1614,7 @@ if WITH_512K_BOARD:
   adda(1)                         #2
   st([channel],Y)                 #3
   ld(syncBits^hSync,OUT)          #4 Start horizontal pulse (4)
-
-  # Horizontal sync and sound channel update for scanlines outside vBlank
-  label('sound2')
-  ld(0x7f)                        #5
+  ld(0x7f)                        #5 Sound processing
   anda([Y,oscL])                  #6
   adda([Y,keyL])                  #7
   st([Y,oscL])                    #8
@@ -1804,11 +1781,11 @@ else:
 
   if WITH_128K_BOARD:
     fillers(until=0xe3)
-    label('vVisibEnter')
+    label('vVisibEnter')          # Return from vCPU interpreter 
     assert(vVisibEnterCyc == 200)
     ld([ctrlVideo],X)             #200,0 <New scan line start>
     ctrl(X)                       #1 Reset banking to page1.
-    anda([channelMask])           #2 
+    anda([channelMask])           #2 AC contains [channel]
     adda(1)                       #3
     ld(syncBits^hSync,OUT)        #4 Start horizontal pulse
     st([channel],Y)               #5 
@@ -1842,7 +1819,7 @@ else:
     
   else:
     fillers(until=0xff)
-    label('vVisibEnter')
+    label('vVisibEnter')          # Return from vCPU interpreter 
     assert(vVisibEnterCyc == 200)
     bra('sound3')                 #200,0 <New scan line start>
     align(0x100, size=0x100)
@@ -1873,14 +1850,11 @@ else:
 
   # Front porch
   ld([channel])                   #1 Advance to next sound channel
-  label('sound3')                 # Return from vCPU interpreter
+  label('sound3')                 #  Return from vCPU interpreter (except 128k)
   anda([channelMask])             #2
   adda(1)                         #3
   ld(syncBits^hSync,OUT)          #4 Start horizontal pulse
-
-  # Horizontal sync and sound channel update for scanlines outside vBlank
-  label('sound2')
-  st([channel],Y)                 #5
+  st([channel],Y)                 #5 Sound processing
   ld(0x7f)                        #6
   anda([Y,oscL])                  #7
   adda([Y,keyL])                  #8
@@ -11727,8 +11701,6 @@ define('vT2_v7'     ,vT2)
 define('vT3_v7'     ,vT3)
 define('userVars2_v7', userVars2_v7)
 define('videoTable', videoTable)
-define('ledTimer_v7',ledTimer)
-define('ledTempo_v7',ledTempo)
 define('vIRQ_v5',    vIRQ_v5)
 define('ctrlBits_v5',ctrlBits)
 define('videoTop_v5',videoTop_v5)
