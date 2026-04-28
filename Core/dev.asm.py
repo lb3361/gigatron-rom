@@ -6908,20 +6908,24 @@ ld(-12/2)                       #11
 # - checks for loader program
 label(fsmLab('SLCHK'))
 st([fsmState])                  #5
-ld([sysArgs+4])                 #6 len>60?
-adda(67)                        #7
-anda(0x80)                      #8
-st([vAC])                       #9
-ld([sysArgs+2])                 #10 writing echo area?
-suba(0x20)                      #11
-anda([sysArgs+2])               #12
-anda(0x80,X)                    #13 X=0 [no] X=0x80 [maybe]
-ld([sysArgs+3])                 #14
-xora([sysArgs+1])               #15
-ora([X])                        #16
-bne(pc()-1)                     #17
-bra('sl:next#20')               #18
-st([sysArgs+0])                 #19
+st(vAC,[vAC])                   #6  make vAC nonzero
+ld([sysArgs+4])                 #7  is len>60 or len<=0
+ble('sl:next#10')               #8
+adda(67)                        #9
+ble('NEXT')                     #10
+ld(-12/2)                       #11
+ld([sysArgs+2])                 #12 does addrl+len cross page boundary
+suba(129)                       #13
+adda([sysArgs+4])               #14
+anda([sysArgs+2])               #15
+anda(0x80)                      #16
+st([vAC])                       #17
+bne('sl:next#20')               #18
+ld([sysArgs+3])                 #19 writing echo row?
+xora([sysArgs+1])               #20
+bne(pc()-1)                     #21
+bra('sl:next#24')               #22
+st([sysArgs+0])                 #23
 
 # Loader microprogram
 label('sl:loader')
