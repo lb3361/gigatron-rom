@@ -6872,6 +6872,7 @@ ora(11)                         #21
 st([sysArgs+6])                 #22,21
 label('sl:srin#23')
 st(IN,[vAC])                    #23 finally read byte
+label('sl:next#24')
 bra('NEXT')                     #24
 ld(-26/2)                       #25
 
@@ -6948,9 +6949,9 @@ fsmAsm('SRIN')
 fsmAsm('ST', sysArgs+2)         # addrl
 fsmAsm('SRIN')
 fsmAsm('ST', sysArgs+3)         # addrh
-fsmAsm('CHANMASK')
-fsmAsm('SLCHK')                 # checks
+fsmAsm('SLCHK')                 # validity checks
 fsmAsm('BNZ', 'sl:loader')      # invalid packet
+fsmAsm('CHANMASK')              # channel mask check
 label('sl:data')
 fsmAsm('SRIN')
 fsmAsm('ST+')
@@ -6958,21 +6959,6 @@ fsmAsm('BNZ', 'sl:data')
 fsmAsm('LD', 0xc)              # next dot color
 fsmAsm('B', 'sl:frame')
 
-# Loader entry point
-label('sys_Loader')
-suba(12)                        #18
-bge(pc()+3)                     #19
-bra(pc()+3)                     #20
-ld(0)                           #21
-ld([sysArgs+0])                 #21
-st([sysArgs+0])                 #22
-ld('sl:loader')                 #23
-st([fsmState])                  #24
-ld(hi('FSM15_ENTER'))           #25
-st([vCpuSelect])                #26
-adda(1,Y)                       #27
-jmp(Y,'NEXT')                   #28
-ld(-30/2)                       #29
 
 #----------------------------------------
 # FSM micro-op implementation
@@ -10539,7 +10525,7 @@ ld([vPC+1],Y)                   #27
 
 
 #----------------------------------------
-# SYS_Exec fsm entry
+# SYS_Exec and SYS_Loader fsm entry
 
 label('sys_Exec')
 ld('se:exec')                   #18
@@ -10550,6 +10536,21 @@ ld(0)                           #22
 st([sysFn+1])                   #23
 nop()                           #24
 ld(hi('FSM16_ENTER'))           #25 jumps into exec fsm
+st([vCpuSelect])                #26
+adda(1,Y)                       #27
+jmp(Y,'NEXT')                   #28
+ld(-30/2)                       #29
+
+label('sys_Loader')
+suba(12)                        #18
+bge(pc()+3)                     #19
+bra(pc()+3)                     #20
+ld(0)                           #21
+ld([sysArgs+0])                 #21
+st([sysArgs+0])                 #22
+ld('sl:loader')                 #23
+st([fsmState])                  #24
+ld(hi('FSM15_ENTER'))           #25
 st([vCpuSelect])                #26
 adda(1,Y)                       #27
 jmp(Y,'NEXT')                   #28
