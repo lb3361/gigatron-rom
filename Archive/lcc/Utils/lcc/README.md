@@ -11,8 +11,8 @@ Based on Pat Gavlin's excellent initial work on adding a Gigatron backend to
 `lcc`. Requires Python 3.6+.
 
 Resources:
- * Forum thread: https://forum.gigatron.io/viewtopic.php?f=4&t=116
- * Gigatron website: https://gigatron.io/
+ * Forum thread: https://forum.gigatronttl.eu/viewtopic.php?f=4&t=116
+ * Gigatron website: https://gigatronttl.eu/
  * LCC website: http://sites.google.com/site/lccretargetablecompiler/
  * Original LCC sources: https://github.com/drh/lcc
 

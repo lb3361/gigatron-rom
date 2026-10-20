@@ -2,7 +2,7 @@
 On serialRaw and buttonState
 ============================
 
-[Adapted from: https://forum.gigatron.io/viewtopic.php?f=4&t=138]
+[Adapted from: https://forum.gigatronttl.eu/viewtopic.php?f=4&t=138]
 
 There are two system variables in page zero that appear to have the
 same function. At least, you may be fooled into believing that if

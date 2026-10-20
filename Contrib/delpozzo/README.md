@@ -1,5 +1,5 @@
 # Gigatron
-A collection of software and tools I developed for the [Gigatron TTL microcomputer](https://gigatron.io).
+A collection of software and tools I developed for the [Gigatron TTL microcomputer](https://gigatronttl.eu).
 
 ## Software
 
@@ -9,7 +9,7 @@ A collection of software and tools I developed for the [Gigatron TTL microcomput
 
 ### Video Poker
 
-A 5-card poker game for Gigatron developed in [at67's gtBASIC](https://forum.gigatron.io/viewtopic.php?f=4&t=232). Requires Gigatron ROMv3 or higher.
+A 5-card poker game for Gigatron developed in [at67's gtBASIC](https://forum.gigatronttl.eu/viewtopic.php?f=4&t=232). Requires Gigatron ROMv3 or higher.
 
 ![Screenshot](screenshots/videopoker-02.png?raw=true)
 
@@ -51,7 +51,7 @@ Winning hands and rewards are as follows:
 
 ### Craps
 
-Craps dice game for Gigatron developed in [at67's gtBASIC](https://forum.gigatron.io/viewtopic.php?f=4&t=232). Requires Gigatron ROMv3 or higher.
+Craps dice game for Gigatron developed in [at67's gtBASIC](https://forum.gigatronttl.eu/viewtopic.php?f=4&t=232). Requires Gigatron ROMv3 or higher.
 
 ![Screenshot](screenshots/craps-01.png?raw=true)
 
@@ -95,7 +95,7 @@ Unlike the come-out phase, it is important to note that your bet is unaffected b
 
 **Work-in-Progress**
 
-A fish tank simulation for Gigatron developed in [at67's gtBASIC](https://forum.gigatron.io/viewtopic.php?f=4&t=232). Requires Gigatron ROMv3 or higher.
+A fish tank simulation for Gigatron developed in [at67's gtBASIC](https://forum.gigatronttl.eu/viewtopic.php?f=4&t=232). Requires Gigatron ROMv3 or higher.
 
 ![Screenshot](screenshots/fishtank-alpha-03.png?raw=true)
 

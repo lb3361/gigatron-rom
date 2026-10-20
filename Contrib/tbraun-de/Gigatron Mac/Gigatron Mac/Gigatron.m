@@ -105,7 +105,7 @@ BOOL singleStepCompleted = false;
     uint8_t *gt1Bytes = (uint8_t *)[gt1Data bytes];
     unsigned long gt1Length = [gt1Data length];
     
-    // wait until gigatron does not process vCPU code anymore, see https://forum.gigatron.io/viewtopic.php?f=4&t=77
+    // wait until gigatron does not process vCPU code anymore, see https://forum.gigatronttl.eu/viewtopic.php?f=4&t=77
     // then halt the emulation until the file has been loaded
     waitForNonVCPUOperation = true;
     [self calculateFrame];

@@ -5,8 +5,8 @@ Software for Gigatron ROM  (DEV7ROM)
 
 This is a fork of the official Gigatron ROM software
 containing some advanced ROM features such as [vCPU7](Docs/vCPU7.md),
-[FSM framework](https://forum.gigatron.io/viewtopic.php?p=3714&hilit=fsm#p3714), and
-[Gt1 compression](https://forum.gigatron.io/viewtopic.php?p=4139&hilit=fsm#p4139).
+[FSM framework](https://forum.gigatronttl.eu/viewtopic.php?p=3714&hilit=fsm#p3714), and
+[Gt1 compression](https://forum.gigatronttl.eu/viewtopic.php?p=4139&hilit=fsm#p4139).
 These developments are designed to be maximally compatible with the 
 official ROMv6 except for a slightly faster execution and for the availability of new features.
 They come with a permanent offer to include these advances into the official devrom.

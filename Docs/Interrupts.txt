@@ -1,6 +1,6 @@
 See also:
 https://github.com/kervinck/gigatron-rom/issues/125
-https://forum.gigatron.io/viewtopic.php?f=4&t=175
+https://forum.gigatronttl.eu/viewtopic.php?f=4&t=175
 
 vCPU interrupts
 ---------------

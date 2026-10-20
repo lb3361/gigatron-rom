@@ -65,11 +65,11 @@ Pointers:
 
 - Initial board development
 
-   https://forum.gigatron.io/viewtopic.php?t=64&start=90
+   https://forum.gigatronttl.eu/viewtopic.php?t=64&start=90
 
 - Proposed conventions for additional expansion board functions
 
-   https://forum.gigatron.io/viewtopic.php?t=331
+   https://forum.gigatronttl.eu/viewtopic.php?t=331
 
 - Hans61 recreation of the original 128K board. This board only uses
   common 74'00 chips and come in two version. The first version offers
@@ -77,12 +77,12 @@ Pointers:
   board. The improved version offers two fully functional SPI ports.
   Both are very easy to build.
 
-   https://forum.gigatron.io/viewtopic.php?p=3694#p3694
+   https://forum.gigatronttl.eu/viewtopic.php?p=3694#p3694
    https://github.com/hans61/Gigatron-TTL/ ... ansion128k
 
 - lb3361 expansion "retro" or "dual drive" 128K board. This board
   relies on two GAL chips and offers additional features (see doc).
 
    https://github.com/lb3361/gigatron-lb/tree/main/extension-retro
-   https://forum.gigatron.io/viewtopic.php?t=332
+   https://forum.gigatronttl.eu/viewtopic.php?t=332
 

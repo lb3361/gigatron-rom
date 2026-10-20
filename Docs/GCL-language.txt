@@ -461,7 +461,7 @@ high 8 bits in the process.
 Experimental vCPU instructions in DEVROM
 ----------------------------------------
 
-See also this thread: https://forum.gigatron.io/viewtopic.php?f=4&t=136
+See also this thread: https://forum.gigatronttl.eu/viewtopic.php?f=4&t=136
 
 Mnem. Encoding  #C Description
 ----- --------- -- -----------

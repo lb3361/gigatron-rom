@@ -13,7 +13,7 @@ and rendering its graphics through the [SDL library][sdl].
 It can be used as a lightweight stand-alone emulator as well as being
 controlled by a scripting language such as [Lua][lua].
 
-[gt]:  https://gigatron.io/
+[gt]:  https://gigatronttl.eu/
 [sdl]: http://www.libsdl.org/
 [lua]: https://www.lua.org/
 

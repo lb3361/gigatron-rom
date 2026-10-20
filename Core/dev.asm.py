@@ -2098,7 +2098,7 @@ ld([vPC+1],Y)                   #13
 
 # Instruction POKEA (39 xx), 22 cycles
 # * Store word [xx] at location [vAC]
-# * Origin: https://forum.gigatron.io/viewtopic.php?p=2053#p2053
+# * Origin: https://forum.gigatronttl.eu/viewtopic.php?p=2053#p2053
 #   Section 2. "POKE and DOKE work backwards"
 label('POKEA_v7')
 ld(hi('pokea#13'),Y)            #10,12
@@ -2106,7 +2106,7 @@ jmp(Y,'pokea#13')               #11
 
 # Instruction DOKEA (3b xx), 28 cycles
 # * Store word [xx] at location [vAC]
-# * Origin: https://forum.gigatron.io/viewtopic.php?p=2053#p2053
+# * Origin: https://forum.gigatronttl.eu/viewtopic.php?p=2053#p2053
 #   Section 2. "POKE and DOKE work backwards"
 label('DOKEA_v7')
 ld(hi('dokea#13'),Y)            #10
@@ -2115,7 +2115,7 @@ jmp(Y,'dokea#13')               #11+overlap
 # Instruction DEEKA (3d xx), 30 cycles
 # * Load word at location [vAC] and store into [xx]
 # * Trashes sysArgs7 but can DEEK(sysArgs6or7)
-# * Origin: https://forum.gigatron.io/viewtopic.php?p=2053#p2053
+# * Origin: https://forum.gigatronttl.eu/viewtopic.php?p=2053#p2053
 #   Section 2. "POKE and DOKE work backwards"
 label('DEEKA_v7')
 ld(hi('deeka#13'),Y)            #10,12
@@ -2507,7 +2507,7 @@ jmp(Y,'alloc#13')               #11
 
 # Instruction PEEKA (e1 xx), 24 cycles
 # * Load byte at location [vAC] and store into byte [xx]
-# * Origin: https://forum.gigatron.io/viewtopic.php?p=2053#p2053
+# * Origin: https://forum.gigatronttl.eu/viewtopic.php?p=2053#p2053
 #   Section 2. "POKE and DOKE work backwards"
 label('PEEKA_v7')
 ld(hi('peeka#13'),Y)            #10,12
@@ -7859,7 +7859,7 @@ ld(-22/2)                       #21
 # Instruction MOVL (35 db yy xx), 30+30 cycles
 # * Move four bytes long from [xx] to [yy]
 # * No page crossings, trashes sysArgs,T0,T1
-# * Origin: https://forum.gigatron.io/viewtopic.php?p=2322#p2322
+# * Origin: https://forum.gigatronttl.eu/viewtopic.php?p=2322#p2322
 oplabel('MOVL_v7')
 bra('fsm18op2#16')              #14
 ld('movl#3a')                   #15
@@ -7867,7 +7867,7 @@ ld('movl#3a')                   #15
 # Instruction MOVF (35 dd yy xx), 30+38 cycles
 # * Move five bytes float from [xx] to [yy]
 # * No page crossings, trashes sysArgs,T0,T1, but MOVF(xx,sysArgs0) works
-# * Origin: https://forum.gigatron.io/viewtopic.php?p=2322#p2322
+# * Origin: https://forum.gigatronttl.eu/viewtopic.php?p=2322#p2322
 oplabel('MOVF_v7')
 bra('fsm18op2#16')              #14
 ld('movf#3a')                   #15

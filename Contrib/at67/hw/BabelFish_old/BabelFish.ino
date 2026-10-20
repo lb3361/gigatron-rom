@@ -120,7 +120,7 @@ const byte gt1File[] PROGMEM = {
   |      Arduino Micro config                                            |
   +----------------------------------------------------------------------*/
 
-// See also: https://forum.gigatron.io/viewtopic.php?f=4&t=33
+// See also: https://forum.gigatronttl.eu/viewtopic.php?f=4&t=33
 
 // Arduino AVR    Gigatron Schematic Controller PCB              Gigatron
 // Micro   Name   OUT bit            CD4021     74HC595 (U39)    DB9 (J4)
