@@ -106,10 +106,10 @@ even.  The stack operations are then modified as follows:
 **History:**
 The first stack extension was the addition of a variable
 byte `vSPH` located at address 0x04 in early ROMvX0s
-(https://forum.gigatron.io/viewtopic.php?p=1995#p1995). This provides
+(https://forum.gigatronttl.eu/viewtopic.php?p=1995#p1995). This provides
 the means to displace the stack into any page, but does not allow the
 stack to exceed 256 byte.  The need for a true 16 bits stack was
-expressed in (https://forum.gigatron.io/viewtopic.php?p=2053#p2053).
+expressed in (https://forum.gigatronttl.eu/viewtopic.php?p=2053#p2053).
 vCPU7 achieves this by displacing the `vTmp` scratch byte elsewhere in
 page zero, freeing space after `vSP` to form a 16 bits word, and by
 modifying the stack opcodes to allow them to cross page boundaries
@@ -181,7 +181,7 @@ This makes it difficult to use these instructions to prepare SYS call arguments 
 Many of these instructions were discussed in the "New vCPU
 instruction" thread and implemented by at67 in ROMvX0. The vCPU7
 subset is motivated by the needs of the C compiler
-(https://forum.gigatron.io/viewtopic.php?p=2053#p2053)
+(https://forum.gigatronttl.eu/viewtopic.php?p=2053#p2053)
 with naming conventions that are close to the ones
 selected for ROMvX0.
 
@@ -194,7 +194,7 @@ Two additional instructions provide indexed access.
 
 **History:** :
 This draws on an earlier experience with indexed memory accesses
-(https://forum.gigatron.io/viewtopic.php?p=2349#p2349). These opcodes
+(https://forum.gigatronttl.eu/viewtopic.php?p=2349#p2349). These opcodes
 occasionally faster than direct address calculation followed by a peek
 or poke opcode.  
 
@@ -224,7 +224,7 @@ this penalty, about `|II|/5`, makes this opcode when `|II|` is smaller
 than 80 or when the contents of `vAC` must be preserved.
 
 **History:** Many of these instructions were discusssed in
-(https://forum.gigatron.io/viewtopic.php?p=2053#p2053). The very
+(https://forum.gigatronttl.eu/viewtopic.php?p=2053#p2053). The very
 compact and useful implementation of `ADDV`, `SUBV`, and `ADDSV` are new.
 
 
@@ -379,7 +379,7 @@ with the `ALLOC` instruction to push or pop multiple values on the
 stack at once.
 
 Like most long vCPU7.md instructions, the memory copy instructions
-rely on the FSM mechanism (https://forum.gigatron.io/viewtopic.php?t=403)
+rely on the FSM mechanism (https://forum.gigatronttl.eu/viewtopic.php?t=403)
 to split the job into pieces of at most 30 cycles. The code burst
 copies four bytes when no page crossings are involved. Otherwise it
 reverts to a slower byte-per-byte copy that can cross page
@@ -391,7 +391,7 @@ longer setup times and cannot cross page boundaries.
 **History:**
 The need to copy memory quickly has long been recognized.
 Historical progress includes the `SYS_CopyMemory` call of DEV6ROM
-(https://forum.gigatron.io/viewtopic.php?t=302)
+(https://forum.gigatronttl.eu/viewtopic.php?t=302)
 which is fast but inconvenient and the `NCOPY` instruction 
 initially written for ROMvX0 which is convenient but substantially slower.  
 The FSM framework made it possible to have both.

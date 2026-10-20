@@ -1,7 +1,7 @@
 
 The video basics are best explained in our online BASIC tutorial:
 
-https://gigatron.io/?page_id=1234
+https://gigatronttl.eu/?page_id=1234
 
 All example programs are in the BASIC/ directory
 

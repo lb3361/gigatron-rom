@@ -1,4 +1,4 @@
-https://forum.gigatron.io/viewtopic.php?f=4&t=19
+https://forum.gigatronttl.eu/viewtopic.php?f=4&t=19
 
 """You can do your own thing in "Contrib/&lt;GitHubUserName&gt;/...".
 Everything that appears there coming from that user I will accept

@@ -105,7 +105,7 @@ will see your changes. You shouldn't change the sawtooth waveform
 (3) because it doubles as a right-shift-2 lookup table for the
 SYS_Unpack_56 function used by Pictures.
 
-Image: https://forum.gigatron.io/download/file.php?id=8
+Image: https://forum.gigatronttl.eu/download/file.php?id=8
 
 Noise
 -----
@@ -124,7 +124,7 @@ Envelopes
 ---------
 
 You can make them by changing wavA during vertical blank. See this
-forum topic: https://forum.gigatron.io/viewtopic.php?f=4&t=157
+forum topic: https://forum.gigatronttl.eu/viewtopic.php?f=4&t=157
 
 Demo code in Contrib/dhkolf/apps/PianoAD.gcl and DrumsAD.gcl
 

@@ -64,7 +64,7 @@ data = asm.getRom1()
 address = program.execute
 
 # Inject patch for reliable start using ROM v1 Loader application
-# See: https://forum.gigatron.io/viewtopic.php?p=27#p27
+# See: https://forum.gigatronttl.eu/viewtopic.php?p=27#p27
 if program.needPatch:
   patchArea = 0x5b86 # Somewhere after the ROMv1 Loader's buffer
   print('Apply patch $%04x' % patchArea)

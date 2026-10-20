@@ -81,7 +81,7 @@ const char *text[] = {
   "\a\013The Gigatron community!",
   "\f\70",
   "Gigatron TTL",
-  "\a\60http://gigatron.io",
+  "\a\60http://gigatronttl.eu",
   "",
   "\a\013Marcel van Kervinck",
   "\a\013Walter Belgers",

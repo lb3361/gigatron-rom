@@ -9,7 +9,7 @@ If you want to test the NetTerm without expander hardware (i.e., emulator), you 
 //#define IOPORT SS1
 ```
 **Note:** 
-This application is still experimental and written to work best with a [Gigatron expander card](https://forum.gigatron.io/viewtopic.php?f=4&t=64)  combined with a patched *dev.rom* that enables drawing of the 3x5 'tinyfont'.
+This application is still experimental and written to work best with a [Gigatron expander card](https://forum.gigatronttl.eu/viewtopic.php?f=4&t=64)  combined with a patched *dev.rom* that enables drawing of the 3x5 'tinyfont'.
 To apply the  patch, run `git apply Contrib/xopr/NetTerm/SYS_VDrawWord.patch` followed by `make dev.rom` and `make burn` to compile and burn the DEVROM to EPRPOM.
 
 The patch itself was created using:

@@ -41,8 +41,8 @@ and possibly even Android. As of v0.8.17 it has been tested on Microsoft Windows
 https://www.youtube.com/channel/UCIDqjK ... ewAtLbfwQ/
 
 ## References
-- Gigatron TTL Home: https://gigatron.io/<br/>
-- Gigatron TTL Forums: https://forum.gigatron.io/index.php<br/>
+- Gigatron TTL Home: https://gigatronttl.eu/<br/>
+- Gigatron TTL Forums: https://forum.gigatronttl.eu/index.php<br/>
 - Gigatron TTL Repo: https://github.com/kervinck/gigatron-rom<br/>
 - SDL2 graphics:  https://github.com/kervinck/gigatron-rom/pull/1<br/>
 - Early Gigatron emulation:  http://talkchess.com/forum/viewtopic.php?t=65944&start=11<br/>
@@ -63,7 +63,7 @@ https://www.youtube.com/channel/UCIDqjK ... ewAtLbfwQ/
 - A C++ compiler that supports modern STL.<br/>
 - Requires the latest version of SDL2 and it's appropriate include/library/shared files.<br/>
 - For detailed instructions for Windows, Linux and macOS, see this thread in the Gigatron forum:<br/>
-  https://forum.gigatron.io/viewtopic.php?p=368#p368<br/>
+  https://forum.gigatronttl.eu/viewtopic.php?p=368#p368<br/>
 
 ## Windows
 ~~~

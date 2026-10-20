@@ -65,7 +65,7 @@ DEF   $CD DD    26 Define data or code (vAC,vPC=vPC+2,(vPC&0xff00)+D)
 Experimental vCPU instructions in DEVROM
 ----------------------------------------
 
-See also this thread: https://forum.gigatron.io/viewtopic.php?f=4&t=136
+See also this thread: https://forum.gigatronttl.eu/viewtopic.php?f=4&t=136
 
 Mnem. Encoding  #C Description
 ----- --------- -- -----------

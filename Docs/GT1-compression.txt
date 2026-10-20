@@ -28,7 +28,7 @@ function "decompress" in file "Utils/gt1z/gt1z.cpp" which describes
 how to load a compressed GT1 file in memory. Additional information on
 the design of these files can be found at
 
-      "https://forum.gigatron.io/viewtopic.php?t=458".
+      "https://forum.gigatronttl.eu/viewtopic.php?t=458".
 
 
 GT1Z-file :=
