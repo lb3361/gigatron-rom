@@ -79,7 +79,9 @@ int load_gt1_from_fs(const char *s, void *sectorbuffer)
   /* blank screen for speed */
   videoTopBlank();
   /* prepare zero page mirror */
-  memcpy((void*)0x8030, (void*)0x0030, 0x100-0x30);
+  /* -- used to be memcpy((void*)0x8030, (void*)0x0030, 0x100-0x30); */
+  memset((void*)0x8030, 0, 0x100-030);
+  *(char*)0x8080 = 1;
   /* open file */
   fp->buf = sectorbuffer;
   if ((res = f_open(fp, s, FA_READ)) != FR_OK)

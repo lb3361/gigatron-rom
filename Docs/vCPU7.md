@@ -24,7 +24,7 @@ as destination and source registers by copy opcodes.
 | `vLR`         | `0x1a-0x1b`   | Link register (16 bits).    | Same as vCPU5.
 | `vSP`         | `0x1c-0x1d`   | Stack pointer (16 bits).    | Extended to 16 bits.
 | `vLAC`        | `0x84-0x87`   | Long accumulator (32 bits)            | New
-| `vLAX`        | `0x83-0x87`   | Extended accumulator (40 bits)        | New Overlaps `vLAC`
+| `vLAX`        | `0x83-0x87`   | Extended accumulator (40 bits)        | New. Overlaps `vLAC`
 | `vFAS`        | `0x81`        | Floating point accumulator sign byte  | New
 | `vFAE`        | `0x82`        | Floating point exponent               | New
 | `vT2`         | `0x88-0x89`   | Destination register (16 bits)        | New
@@ -90,18 +90,18 @@ even.  The stack operations are then modified as follows:
   be used for accessing local variables stored at positive stack
   offsets. They no longer can access data stored below the stack
   head. Accessing data with offsets greater than 255 is possible using
-  the slower `LSXW` and `STXW` instructions, or by computing their
+  the slower `LDXW` and `STXW` instructions, or by computing their
   addresses in `vAC` and using the `DOKEA` or `DEEKA` instructions.
 
 * The `PUSH` and `POP` opcodes only cross page boundaries when
   the stack pointer is even. Instructions `LDLW` and `STLW` only
-  can access words whose two bytes belong to the same page. The 
+  can access words whose two bytes belong to the same page. The
   simplest way to ensure this is to keep the stack pointer even
   and only use even offsets in `LDLW` or `STLW`. If the stack
   contains long integer variables (4 bytes), it is convenient
-  to go further and align the stack pointer on four bytes 
+  to go further and align the stack pointer on four bytes
   boundaries.
-  
+
 
 **History:**
 The first stack extension was the addition of a variable
@@ -133,7 +133,7 @@ The Jcc opcodes use the same space as the traditional `Bcc` opcodes.
 JLT, JGE, and JGT are always faster than their Bcc counterparts.
 
 An additional opcode `DBNE` is convenient for writing small
-assembly code loops that iterate a predefined number of times. 
+assembly code loops that iterate a predefined number of times.
 
 | Opcode | Encoding   |  Cycles   | Notes
 | ------ | ---------- | --------- | -------
@@ -194,9 +194,8 @@ Two additional instructions provide indexed access.
 
 **History:** :
 This draws on an earlier experience with indexed memory accesses
-(https://forum.gigatronttl.eu/viewtopic.php?p=2349#p2349). These opcodes
-occasionally faster than direct address calculation followed by a peek
-or poke opcode.  
+(https://forum.gigatronttl.eu/viewtopic.php?p=2349#p2349).
+These opcodes run occasionally faster than direct address calculation followed by a peek or poke opcode.
 
 
 ### Moving data without changing vAC
@@ -220,8 +219,8 @@ Opcode `ADDSV` takes a signed byte as immediate argument and generally
 runs in 30 cycles but incurs a penalty of 22/24 cycles when the
 addition crosses a half-page boundary and possibly involves a carry.
 Compared to alternatives such as `LDI;ADDV(VV)`, the amortized cost of
-this penalty, about `|II|/5`, makes this opcode when `|II|` is smaller
-than 80 or when the contents of `vAC` must be preserved.
+this penalty, about `|II|/5`, makes this opcode attractive when `|II|`
+is smaller than 80 or when the contents of `vAC` must be preserved.
 
 **History:** Many of these instructions were discusssed in
 (https://forum.gigatronttl.eu/viewtopic.php?p=2053#p2053). The very
@@ -392,8 +391,8 @@ longer setup times and cannot cross page boundaries.
 The need to copy memory quickly has long been recognized.
 Historical progress includes the `SYS_CopyMemory` call of DEV6ROM
 (https://forum.gigatronttl.eu/viewtopic.php?t=302)
-which is fast but inconvenient and the `NCOPY` instruction 
-initially written for ROMvX0 which is convenient but substantially slower.  
+which is fast but inconvenient and the `NCOPY` instruction
+initially written for ROMvX0 which is convenient but substantially slower.
 The FSM framework made it possible to have both.
 
 
@@ -452,7 +451,7 @@ whose upper 32 bits overlate the long accumulator `vLAC`.
 
 | Opcode | Encoding      | Cycles     | Function
 | ------ | ----------    | ---------- | -------
-| NEGX   | `35 0e`       | 22+14+24   | Negate the extended accumulator `vLAX`<br>(thrashes `sysArgs[67]`) 
+| NEGX   | `35 0e`       | 22+14+24   | Negate the extended accumulator `vLAX`<br>(thrashes `sysArgs[67]`)
 | MACX   | `35 1c`       | 394 to 842 | Add `vACL` (8 bits) times `sysArgs[0..4]` to `vLAX`<br>(trashes `sysArgs[5-7]`, `vACH`)
 | LSRXA  | `35 18`       | 42 to 322  | Right shift `vLAX` by `vAC & 0x3f` positions<br>(trashes `sysArgs[67]`, `vAC`)
 | LSLXA  | `35 12`       | 38 to 415  | Left shift `vLAX` by `vAC & 0x3f` positions<br>(trashes `sysArgs[67]`, `vAC`)
@@ -517,12 +516,12 @@ Two opcodes, `FILL` and `BLIT` are useful for creating graphics.
 | BLIT   | `35 48`  | max `72+h*(20+ceil(w/6)*56)`  | Copy a rectangular area<br>(trashes `vLAC` `sysArgs[0-7]`)
 
 Both opcodes see the Gigatron memory as a 256x256 array of bytes, with both rows
-and columns wrapping around, and operate on subarrays of this array, 
+and columns wrapping around, and operate on subarrays of this array,
 defined by a range of rows (y coordinates) and a range of columns (x coordinates).
-Depending on the contents of the video table, the screen buffer can also be set up 
-as a subarray defined by a range of rows and a range of columns. 
+Depending on the contents of the video table, the screen buffer can also be set up
+as a subarray defined by a range of rows and a range of columns.
 
-Both opcodes change the contents of a destination subarray whose top-left corner 
+Both opcodes change the contents of a destination subarray whose top-left corner
 is provided  in register `vT2`, y coordinate in the high byte, x coordinate in the low byte,
 and whose size is provided by register `vAC`, height im the high byte, and width in the low byte.
 A width or height of 0 means 256.
@@ -590,7 +589,7 @@ what happens when this is the case.
   should then return using the VRESTORE opcode.  However, interrupt
   are inhibited when byte `irqMask` at offset 0xff in the context page
   is nonzero. Flag `irqFlag` indicates whether this has happened.
-  
+
 Byte `irqMask` in the context record is automatically set to a nonzero
 value when the context is saved by an interrupt or by `vSAVE`, and is
 cleared by `VRESTORE`. This feature prevents another virtual interrupt
